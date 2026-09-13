@@ -9,6 +9,7 @@ import {
   publicQuestions,
   questionSchema,
 } from "../lib/domain";
+import { DAILY_HEROES, dailyHero } from "../lib/daily-hero";
 test("IST midnight is authoritative regardless of machine timezone", () => {
   assert.equal(istDate(new Date("2026-09-13T18:29:59Z")), "2026-09-13");
   assert.equal(istDate(new Date("2026-09-13T18:30:00Z")), "2026-09-14");
@@ -31,6 +32,24 @@ test("sessions add to exactly one qualified day; yesterday survives until today 
 test("two-calendar-day unlock crosses month, year and leap boundaries", () => {
   assert.equal(shiftDate("2026-12-31", 2), "2027-01-02");
   assert.equal(shiftDate("2028-02-28", 2), "2028-03-01");
+});
+test("daily hero uses every line once before reshuffling", () => {
+  assert.equal(DAILY_HEROES.length, 40);
+  const firstCycle = Array.from({ length: 40 }, (_, index) =>
+    dailyHero(shiftDate("2026-01-01", index)),
+  );
+  assert.equal(new Set(firstCycle).size, 40);
+  assert.notEqual(
+    firstCycle[39],
+    dailyHero(shiftDate("2026-01-01", 40)),
+  );
+  const longRun = Array.from({ length: 800 }, (_, index) =>
+    dailyHero(shiftDate("2026-01-01", index)),
+  );
+  longRun.forEach((hero, index) => {
+    if (index) assert.notEqual(hero, longRun[index - 1]);
+  });
+  assert.deepEqual(dailyHero("2026-09-13"), dailyHero("2026-09-13"));
 });
 test("clients cannot backdate or submit fractional, oversized and empty entries", () => {
   const entry = {

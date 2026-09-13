@@ -62,17 +62,21 @@ async function handler(request: Request) {
         await sql`SELECT id,topic,subject,study_date AS "studyDate",available_on AS "availableOn",jsonb_array_length(questions) AS count,status FROM topic_sets WHERE user_id=${userId} ORDER BY study_date DESC`;
       const attempts =
         await sql`SELECT id,set_id AS "setId",score,jsonb_array_length(questions) AS count,submitted_at AS "submittedAt" FROM quiz_attempts WHERE user_id=${userId} AND submitted_at IS NOT NULL ORDER BY submitted_at DESC`;
+      const recallVisible = new Set(sessions.map((session) => session.date)).size >= 2;
       return json({
         today: istDate(),
         displayName: profiles[0]?.display_name || "Student",
+        recallVisible,
         sessions,
-        sets: sets.map((s) => ({
-          ...s,
-          topic: s.availableOn <= istDate() ? s.topic : "Upcoming recall",
-          subject: s.availableOn <= istDate() ? s.subject : "",
-          locked: s.availableOn > istDate(),
-        })),
-        attempts,
+        sets: recallVisible
+          ? sets.map((s) => ({
+              ...s,
+              topic: s.availableOn <= istDate() ? s.topic : "Upcoming recall",
+              subject: s.availableOn <= istDate() ? s.subject : "",
+              locked: s.availableOn > istDate(),
+            }))
+          : [],
+        attempts: recallVisible ? attempts : [],
       });
     }
     if (path === "entries" && method === "POST") {
@@ -114,6 +118,10 @@ async function handler(request: Request) {
         .parse(await request.json());
       if (!(await rateLimit("quiz-start:" + userId, 60, 3600)))
         return json({ error: "Too many quiz starts." }, 429);
+      const usage =
+        await sql`SELECT count(DISTINCT date)::int AS days FROM study_sessions WHERE user_id=${userId}`;
+      if (Number(usage[0]?.days || 0) < 2)
+        return json({ error: "Recall is not available yet." }, 404);
       const sets =
         await sql`SELECT * FROM topic_sets WHERE id=${id} AND user_id=${userId} AND available_on<=${istDate()} AND jsonb_array_length(questions)>0`;
       if (!sets.length)

@@ -35,12 +35,62 @@ test("unconfigured app keeps writes closed and presents a calm setup screen", as
   });
   expect(r.status()).toBe(403);
 });
+test("Recall stays hidden until study has been logged on two IST days", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/status")
+      return route.fulfill({
+        json: { configured: true, authenticated: true },
+      });
+    if (path === "/api/data")
+      return route.fulfill({
+        json: {
+          today: "2026-09-13",
+          displayName: "Varun",
+          recallVisible: false,
+          sessions: [
+            {
+              id,
+              date: "2026-09-13",
+              duration: 60,
+              content: "Karnataka current affairs.",
+              submittedAt: "2026-09-13T04:00:00Z",
+              status: "ready",
+            },
+          ],
+          // Even stale client data must not reveal the Recall interface.
+          sets: [
+            {
+              id,
+              topic: "Hidden topic",
+              subject: "Current affairs",
+              studyDate: "2026-09-13",
+              availableOn: "2026-09-15",
+              count: 10,
+              status: "ready",
+              locked: true,
+            },
+          ],
+          attempts: [],
+        },
+      });
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /TODAY/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /RECALL/ })).toHaveCount(0);
+  await expect(page.getByText("TOPICS TO RECALL")).toHaveCount(0);
+  await expect(page.getByText("Hidden topic")).toHaveCount(0);
+});
 test("ledger, history, delayed quizzes and post-submit explanations at desktop and mobile", async ({
   page,
 }) => {
   const data = {
     today: "2026-09-13",
     displayName: "Varun",
+    recallVisible: true,
     sessions: [
       {
         id,
@@ -48,6 +98,14 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
         duration: 60,
         content: "Percentages and successive changes.",
         submittedAt: "2026-09-13T04:00:00Z",
+        status: "ready",
+      },
+      {
+        id: "550e8400-e29b-41d4-a716-446655440001",
+        date: "2026-09-12",
+        duration: 45,
+        content: "Indian monsoon patterns.",
+        submittedAt: "2026-09-12T04:00:00Z",
         status: "ready",
       },
     ],

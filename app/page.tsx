@@ -5,6 +5,7 @@ import { authClient } from "@/lib/auth-client";
 import { Mark } from "@/app/mark";
 import { AuthIntro } from "@/app/auth/auth-intro";
 import { AuthView } from "@neondatabase/auth-ui";
+import { dailyHero } from "@/lib/daily-hero";
 type Session = {
   id: string;
   date: string;
@@ -26,6 +27,7 @@ type SetInfo = {
 type Data = {
   today: string;
   displayName: string;
+  recallVisible: boolean;
   sessions: Session[];
   sets: SetInfo[];
   attempts: { id: string; setId: string; score: number; count: number }[];
@@ -51,6 +53,7 @@ export default function Home() {
   const [data, setData] = useState<Data>({
     today: istDate(),
     displayName: "",
+    recallVisible: false,
     sessions: [],
     sets: [],
     attempts: [],
@@ -161,7 +164,8 @@ export default function Home() {
   }, [settings]);
   const stats = streakStats(data.sessions, data.today),
     todayEntries = data.sessions.filter((s) => s.date === data.today),
-    available = data.sets.filter((s) => !s.locked && s.count > 0);
+    available = data.sets.filter((s) => !s.locked && s.count > 0),
+    hero = dailyHero(data.today);
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -314,13 +318,11 @@ export default function Home() {
                 {label(data.today)} · INDIA STANDARD TIME
               </p>
               <h1>
-                One hour.
+                {hero.lead}
                 <br />
-                <em>Every day.</em>
+                <em>{hero.accent}</em>
               </h1>
-              <p className="heroCopy">
-                Show up for the person you’re becoming.
-              </p>
+              <p className="heroCopy">{hero.support}</p>
             </div>
             <div className="streakStamp">
               <span className="stampLabel">CURRENT STREAK</span>
@@ -341,12 +343,18 @@ export default function Home() {
               </b>{" "}
               TOTAL STUDY
             </span>
-            <span>
-              <b>{available.length}</b> TOPICS TO RECALL
-            </span>
+            {data.recallVisible && (
+              <span>
+                <b>{available.length}</b> TOPICS TO RECALL
+              </span>
+            )}
           </div>
           <nav className="tabs" aria-label="Main navigation">
-            {(["today", "history", "quizzes"] as const).map((t) => (
+            {(
+              data.recallVisible
+                ? (["today", "history", "quizzes"] as const)
+                : (["today", "history"] as const)
+            ).map((t) => (
               <button
                 key={t}
                 aria-current={tab === t ? "page" : undefined}
@@ -602,7 +610,7 @@ export default function Home() {
               </div>
             </section>
           )}
-          {tab === "quizzes" && (
+          {data.recallVisible && tab === "quizzes" && (
             <section className="quizzes">
               {!quiz ? (
                 <>
