@@ -31,9 +31,9 @@ export function AuthIntro() {
         ಓದು ಇಂದು · YOUR STUDY COMPANION
       </p>
       <h1 className="authReveal authRevealTwo">
-        Begin with
+        baa appi,
         <br />
-        <em>one honest hour.</em>
+        <em>odhi nodu.</em>
       </h1>
       <p className="authReveal authRevealThree">
         Write down what you learned. Keep the day. Meet it again as recall.

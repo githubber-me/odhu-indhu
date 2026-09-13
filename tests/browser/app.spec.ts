@@ -7,7 +7,7 @@ test("Neon Auth offers Google and Magic Link without passwords", async ({ page }
   await page.goto("/auth/sign-in");
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: "Begin with one honest hour." }),
+    page.getByRole("heading", { name: "baa appi, odhi nodu." }),
   ).toBeVisible();
   await expect(page.getByText("Sign In", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /email/i })).toBeVisible();
