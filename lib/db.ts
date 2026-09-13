@@ -13,9 +13,11 @@ export function db() {
 export function configured() {
   const cookieSecret =
     process.env.NEON_AUTH_COOKIE_SECRET || process.env.CRON_SECRET || "";
+  const neonAuthBaseUrl =
+    process.env.NEON_AUTH_BASE_URL || process.env.DATABASE_NEON_AUTH_BASE_URL;
   return Boolean(
     process.env.DATABASE_URL &&
-    process.env.NEON_AUTH_BASE_URL &&
+    neonAuthBaseUrl &&
     cookieSecret.length >= 32,
   );
 }

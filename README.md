@@ -4,7 +4,7 @@ Varun’s private SSC CGL companion. Next.js on Vercel, Neon Postgres and Neon A
 
 ## One-time setup
 
-1. Create a Neon Postgres database with Auth enabled through the Vercel integration. Use a region close to the application, expose it as `DATABASE_URL`, and copy `DATABASE_URL` plus `NEON_AUTH_BASE_URL` into `.env.local`. Keep their values private.
+1. Create a Neon Postgres database with Auth enabled through the Vercel integration. Use a region close to the application and copy `DATABASE_URL` plus the Auth URL into `.env.local`. The app accepts Neon’s automatically prefixed `DATABASE_NEON_AUTH_BASE_URL` as well as `NEON_AUTH_BASE_URL`. Keep their values private.
 2. Generate `CRON_SECRET` with `openssl rand -hex 32`, keep it in `.env.local`, and add the same value to Vercel. The application derives a domain-separated Neon Auth cookie-signing key from it. You may instead set a dedicated `NEON_AUTH_COOKIE_SECRET` of at least 32 characters.
 3. Keep `SARVAM_API_KEY` and `PARALLEL_API_KEY` in `.env.local`. `SARVAM_MODEL` defaults to `sarvam-105b`; set `SARVAM_MODEL=glm5.2` only after enabling Sarvam beta access.
 4. Run `npm run db:migrate`. The repeatable migration creates the application tables and prevents edits to sealed study entries.
@@ -14,7 +14,7 @@ The app stays closed if database, Neon Auth, or cookie-signing configuration is 
 
 ## Vercel deployment
 
-Set `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `CRON_SECRET`, `SARVAM_API_KEY`, `PARALLEL_API_KEY`, and optionally `SARVAM_MODEL` in Vercel. Neon’s integration supplies branch-specific database and Auth URLs for previews. Run the migration against production before signing in, configure the allowed domains, and enable only Google and Magic Link in Neon Auth.
+Neon’s Vercel integration already supplies `DATABASE_URL` and `DATABASE_NEON_AUTH_BASE_URL` (or `NEON_AUTH_BASE_URL` without a custom prefix), including branch-specific values for previews. Add only `CRON_SECRET`, `SARVAM_API_KEY`, `PARALLEL_API_KEY`, and optionally `SARVAM_MODEL` yourself. Run the migration against production before signing in, configure the allowed domains, and enable only Google and Magic Link in Neon Auth.
 
 `vercel.json` includes a daily recovery sweep compatible with Hobby. Submission and the authenticated app also trigger background processing. Each worker invocation handles one topic with a database lease; additional topics progress while the app is open or through the recovery sweep. With many topics and the browser closed, preparation can take longer than the unlock date. For guaranteed high-volume readiness, use a more frequent authenticated cron on Vercel Pro or a durable queue before opening public registration. The unlock date itself never depends on cron timing.
 
