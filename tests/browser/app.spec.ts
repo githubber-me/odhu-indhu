@@ -1,5 +1,28 @@
 import { test, expect } from "@playwright/test";
 const id = "550e8400-e29b-41d4-a716-446655440000";
+test("social previews expose public Open Graph and X cards", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute(
+    "content",
+    "Odhu Indhu | One hour. Every day.",
+  );
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute(
+    "content",
+    "summary_large_image",
+  );
+  for (const path of ["/opengraph-image", "/twitter-image"]) {
+    const response = await request.get(path);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["content-type"]).toContain("image/png");
+    expect((await response.body()).length).toBeGreaterThan(100_000);
+  }
+  const manifest = await request.get("/manifest.webmanifest");
+  expect(manifest.ok()).toBe(true);
+  expect((await manifest.json()).name).toBe("Odhu Indhu");
+});
 test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
   await page.route("**/api/status", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -80,6 +103,14 @@ test("Recall stays hidden until study has been logged on two IST days", async ({
             },
           ],
           attempts: [],
+          weekly: {
+            storageReady: true,
+            currentWeekStart: "2026-09-07",
+            planPending: false,
+            pendingSummaries: [],
+            reports: [],
+            voiceNotes: [],
+          },
         },
       });
     return route.fulfill({ json: { ok: true } });
@@ -89,6 +120,69 @@ test("Recall stays hidden until study has been logged on two IST days", async ({
   await expect(page.getByRole("button", { name: /RECALL/ })).toHaveCount(0);
   await expect(page.getByText("TOPICS TO RECALL")).toHaveCount(0);
   await expect(page.getByText("Hidden topic")).toHaveCount(0);
+});
+test("weekly report and voice rituals lead the signed-in mobile view", async ({
+  page,
+}) => {
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/status")
+      return route.fulfill({
+        json: { configured: true, authenticated: true },
+      });
+    if (path === "/api/data")
+      return route.fulfill({
+        json: {
+          today: "2026-09-13",
+          displayName: "Student",
+          email: "student@example.com",
+          recallVisible: false,
+          sessions: [],
+          sets: [],
+          attempts: [],
+          weekly: {
+            storageReady: true,
+            currentWeekStart: "2026-09-07",
+            planPending: true,
+            pendingSummaries: ["2026-09-07"],
+            reports: [
+              {
+                id,
+                weekStart: "2026-08-31",
+                generatedAt: "2026-09-07T00:00:00+05:30",
+                downloadedAt: null,
+              },
+            ],
+            voiceNotes: [
+              {
+                id: "550e8400-e29b-41d4-a716-446655440002",
+                weekStart: "2026-08-31",
+                kind: "reflection",
+                uploadedAt: "2026-09-06T12:00:00Z",
+              },
+            ],
+          },
+        },
+      });
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const priority = page.getByLabel("Weekly priorities");
+  await expect(priority.getByText("YOUR WEEKLY LEDGER IS READY")).toBeVisible();
+  await expect(priority.getByText("CLOSE THE WEEK")).toBeVisible();
+  await expect(priority.getByText("THIS WEEK’S INTENTION")).toBeVisible();
+  await expect(page.locator(".weeklyPriority + .hero")).toHaveCount(1);
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+  ).toBe(true);
+  await page.screenshot({ path: "test-results/weekly-mobile.png", fullPage: true });
+  await page.getByRole("button", { name: "Open settings" }).click();
+  await expect(page.getByLabel("DISPLAY NAME")).toHaveValue("Student");
+  await expect(page.getByText("student@example.com")).toBeVisible();
+  await expect(page.getByText("WEEKLY PDF")).toBeVisible();
+  await expect(page.getByText("WEEKLY REFLECTION")).toBeVisible();
+  await expect(page.locator("audio")).toHaveCount(1);
 });
 test("ledger, history, delayed quizzes and post-submit explanations at desktop and mobile", async ({
   page,
@@ -138,6 +232,14 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
       },
     ],
     attempts: [],
+    weekly: {
+      storageReady: true,
+      currentWeekStart: "2026-09-07",
+      planPending: false,
+      pendingSummaries: [],
+      reports: [],
+      voiceNotes: [],
+    },
   };
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;

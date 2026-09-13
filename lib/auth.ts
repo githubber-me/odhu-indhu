@@ -10,14 +10,18 @@ const legacyOwnerId = "00000000-0000-4000-8000-000000000001";
 
 async function appUserId(user: NeonUser) {
   const sql = db();
-  const displayName =
-    user.name?.trim() || user.email?.split("@")[0] || "Student";
   const email = user.email?.trim().toLocaleLowerCase("en-IN") || null;
+  const emailName = email
+    ?.split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .trim()
+    .replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase("en-IN"));
+  const displayName = (emailName || user.name?.trim() || "Student").slice(0, 60);
   return sql.begin(async (tx) => {
     const existing =
       await tx`SELECT id FROM app_users WHERE auth_provider='neon' AND auth_subject=${user.id}`;
     if (existing.length) {
-      await tx`UPDATE app_users SET display_name=${displayName},email=${email} WHERE id=${existing[0].id}`;
+      await tx`UPDATE app_users SET display_name=CASE WHEN display_name_edited THEN display_name ELSE ${displayName} END,email=${email} WHERE id=${existing[0].id}`;
       return existing[0].id as string;
     }
 
@@ -26,7 +30,7 @@ async function appUserId(user: NeonUser) {
     const legacy =
       await tx`SELECT id FROM app_users WHERE id=${legacyOwnerId} AND auth_subject IS NULL FOR UPDATE`;
     if (legacy.length) {
-      await tx`UPDATE app_users SET display_name=${displayName},email=${email},auth_provider='neon',auth_subject=${user.id} WHERE id=${legacyOwnerId}`;
+      await tx`UPDATE app_users SET display_name=${displayName},display_name_edited=false,email=${email},auth_provider='neon',auth_subject=${user.id} WHERE id=${legacyOwnerId}`;
       return legacyOwnerId;
     }
 

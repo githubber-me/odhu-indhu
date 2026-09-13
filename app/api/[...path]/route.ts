@@ -1,6 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { handleUpload } from "@vercel/blob/client";
+import { get, head } from "@vercel/blob";
 import { db, configured } from "@/lib/db";
 import {
   authenticated,
@@ -11,11 +13,19 @@ import {
 import {
   entrySchema,
   istDate,
+  shiftDate,
   publicQuestions,
   Question,
   csv,
 } from "@/lib/domain";
 import { drainWork } from "@/lib/pipeline";
+import {
+  drainWeeklyWork,
+  generateEligibleReports,
+  weeklyDashboard,
+} from "@/lib/weekly";
+import { startOfIstWeek } from "@/lib/weekly-domain";
+import { weeklyPdf } from "@/lib/weekly-pdf";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -48,14 +58,21 @@ async function handler(request: Request) {
     if (path === "cron" && method === "GET") {
       if (!cronAuthorized(request)) return json({ error: "Unauthorized" }, 401);
       await drainWork();
+      await drainWeeklyWork();
       await sql`DELETE FROM rate_limits WHERE expires_at<now()`;
+      return json({ ok: true });
+    }
+    if (path === "weekly/cron" && method === "GET") {
+      if (!cronAuthorized(request)) return json({ error: "Unauthorized" }, 401);
+      await generateEligibleReports();
+      await drainWeeklyWork();
       return json({ ok: true });
     }
     const userId = await authenticated();
     if (!userId) return json({ error: "Please sign in again." }, 401);
     if (path === "data" && method === "GET") {
       const profiles =
-        await sql`SELECT display_name FROM app_users WHERE id=${userId}`;
+        await sql`SELECT display_name,email FROM app_users WHERE id=${userId}`;
       const sessions =
         await sql`SELECT id,date,duration,content,submitted_at AS "submittedAt",status FROM study_sessions WHERE user_id=${userId} ORDER BY submitted_at DESC`;
       const sets =
@@ -66,6 +83,7 @@ async function handler(request: Request) {
       return json({
         today: istDate(),
         displayName: profiles[0]?.display_name || "Student",
+        email: profiles[0]?.email || "",
         recallVisible,
         sessions,
         sets: recallVisible
@@ -77,6 +95,138 @@ async function handler(request: Request) {
             }))
           : [],
         attempts: recallVisible ? attempts : [],
+        weekly: await weeklyDashboard(userId),
+      });
+    }
+    if (path === "profile" && method === "POST") {
+      if (!(await rateLimit("profile:" + userId, 20, 3600)))
+        return json({ error: "Please wait before changing your profile again." }, 429);
+      const { displayName } = z
+        .object({ displayName: z.string().trim().min(1).max(60) })
+        .parse(await request.json());
+      await sql`UPDATE app_users SET display_name=${displayName},display_name_edited=true WHERE id=${userId}`;
+      return json({ ok: true, displayName });
+    }
+    if (path === "weekly/upload" && method === "POST") {
+      if (!process.env.BLOB_READ_WRITE_TOKEN)
+        return json({ error: "Weekly voice storage is not connected yet." }, 503);
+      const result = await handleUpload({
+        request,
+        body: await request.json(),
+        onBeforeGenerateToken: async (pathname, clientPayload) => {
+          const payload = z
+            .object({
+              noteId: z.string().uuid(),
+              weekStart: z.string().date(),
+              kind: z.enum(["plan", "reflection"]),
+            })
+            .parse(JSON.parse(clientPayload || "null"));
+          if (!pathname.startsWith(`weekly/${payload.noteId}/`))
+            throw new Error("Invalid upload path");
+          const currentWeek = startOfIstWeek(istDate());
+          if (
+            (payload.kind === "plan" && payload.weekStart !== currentWeek) ||
+            (payload.kind === "reflection" &&
+              (payload.weekStart > currentWeek ||
+                istDate() < shiftDate(payload.weekStart, 6)))
+          )
+            throw new Error("This weekly note is not open yet");
+          const existing =
+            await sql`SELECT 1 FROM weekly_voice_notes WHERE user_id=${userId} AND week_start=${payload.weekStart} AND kind=${payload.kind}`;
+          if (existing.length) throw new Error("This voice note is already sealed");
+          return {
+            allowedContentTypes: [
+              "audio/aac",
+              "audio/flac",
+              "audio/m4a",
+              "audio/mp4",
+              "audio/mpeg",
+              "audio/ogg",
+              "audio/x-m4a",
+              "audio/x-wav",
+              "audio/vnd.wave",
+              "audio/wav",
+              "audio/webm",
+              "video/webm",
+            ],
+            maximumSizeInBytes: 25 * 1024 * 1024,
+            addRandomSuffix: true,
+            tokenPayload: JSON.stringify({ ...payload, userId }),
+          };
+        },
+      });
+      return json(result);
+    }
+    if (path === "weekly/complete" && method === "POST") {
+      const body = z
+        .object({
+          noteId: z.string().uuid(),
+          weekStart: z.string().date(),
+          kind: z.enum(["plan", "reflection"]),
+          url: z.string().url(),
+          pathname: z.string().min(1),
+        })
+        .parse(await request.json());
+      const metadata = await head(body.url);
+      if (
+        metadata.pathname !== body.pathname ||
+        !metadata.pathname.startsWith(`weekly/${body.noteId}/`) ||
+        !metadata.contentType.startsWith("audio/") &&
+          metadata.contentType !== "video/webm" ||
+        metadata.size > 25 * 1024 * 1024
+      )
+        return json({ error: "The uploaded voice note could not be verified." }, 400);
+      const currentWeek = startOfIstWeek(istDate());
+      if (
+        (body.kind === "plan" && body.weekStart !== currentWeek) ||
+        (body.kind === "reflection" &&
+          (body.weekStart > currentWeek ||
+            istDate() < shiftDate(body.weekStart, 6)))
+      )
+        return json({ error: "This weekly note is not open yet." }, 400);
+      await sql`
+        INSERT INTO weekly_voice_notes(
+          id,user_id,week_start,kind,blob_url,blob_pathname,content_type,size_bytes
+        ) VALUES(
+          ${body.noteId},${userId},${body.weekStart},${body.kind},${body.url},
+          ${metadata.pathname},${metadata.contentType},${metadata.size}
+        ) ON CONFLICT(user_id,week_start,kind) DO NOTHING`;
+      after(() => drainWeeklyWork(userId));
+      return json({ ok: true });
+    }
+    if (path === "weekly/report" && method === "GET") {
+      const id = z.string().uuid().parse(new URL(request.url).searchParams.get("id"));
+      const rows = await sql`
+        SELECT r.metrics,u.display_name
+        FROM weekly_reports r JOIN app_users u ON u.id=r.user_id
+        WHERE r.id=${id} AND r.user_id=${userId}`;
+      if (!rows.length) return json({ error: "Report not found." }, 404);
+      const bytes = await weeklyPdf(rows[0].display_name, rows[0].metrics);
+      await sql`UPDATE weekly_reports SET downloaded_at=COALESCE(downloaded_at,now()) WHERE id=${id} AND user_id=${userId}`;
+      return new Response(Buffer.from(bytes), {
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": `attachment; filename="odhu-indhu-weekly-${rows[0].metrics.weekStart}.pdf"`,
+          "cache-control": "no-store",
+        },
+      });
+    }
+    if (path === "weekly/voice" && method === "GET") {
+      const id = z.string().uuid().parse(new URL(request.url).searchParams.get("id"));
+      const rows =
+        await sql`SELECT blob_url FROM weekly_voice_notes WHERE id=${id} AND user_id=${userId}`;
+      if (!rows.length) return json({ error: "Voice note not found." }, 404);
+      const blob = await get(rows[0].blob_url, { access: "private" });
+      if (!blob || blob.statusCode !== 200)
+        return json({ error: "Voice note not found." }, 404);
+      return new Response(blob.stream, {
+        headers: {
+          "content-type": blob.blob.contentType,
+          "content-length": String(blob.blob.size),
+          "content-disposition": "inline",
+          "cache-control": "private, no-store",
+          "accept-ranges": "none",
+        },
       });
     }
     if (path === "entries" && method === "POST") {
@@ -109,7 +259,12 @@ async function handler(request: Request) {
     }
     if (path === "work" && method === "POST") {
       if (await rateLimit("work:" + userId, 1, 20))
-        after(() => drainWork(undefined, userId));
+        after(async () => {
+          await Promise.all([
+            drainWork(undefined, userId),
+            drainWeeklyWork(userId),
+          ]);
+        });
       return json({ ok: true });
     }
     if (path === "quiz/start" && method === "POST") {

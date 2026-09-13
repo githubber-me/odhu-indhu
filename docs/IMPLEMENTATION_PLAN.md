@@ -4,15 +4,15 @@ Status: build-ready product and technical specification. This document is planni
 
 ## 1. Product definition
 
-Odhu Indhu is Varun's private SSC CGL study companion. Its core loop is:
+Odhu Indhu is a private, general-purpose study companion. Its core loop is:
 
-1. Varun records a study session in plain English and enters its duration manually.
+1. A learner records a study session in plain English and enters its duration manually.
 2. Sessions on the same IST calendar day accumulate toward a one-hour goal.
 3. A day qualifies for the streak as soon as the total reaches 60 minutes.
 4. The raw entry remains immutable.
 5. Backend processing privately extracts topics and generates 10 rigorously checked MCQs for every unique topic.
 6. Questions remain locked for two IST calendar days. Work logged on Monday becomes available on Wednesday.
-7. Varun completes a topic-labelled quiz and sees the result, the correct answer, a full solution, and an explanation for every option only after submitting the quiz.
+7. The learner completes a topic-labelled quiz and sees the result, the correct answer, a full solution, and an explanation for every option only after submitting the quiz.
 
 The experience should feel like a disciplined study ledger, not a gamified children's app.
 
@@ -21,8 +21,8 @@ The experience should feel like a disciplined study ledger, not a gamified child
 - Product name: **Odhu Indhu**.
 - UI language: English, with restrained Kannada identity.
 - Platform: responsive web application deployed on Vercel.
-- Primary user: Varun; single-user MVP.
-- Authentication: one private passphrase.
+- Users: independent accounts with strictly separated study data.
+- Authentication: Google and passwordless Magic Link through Neon Auth.
 - Study input: immutable free text plus manually entered duration.
 - Streak qualification: at least 60 accumulated minutes in an IST calendar day.
 - Backdating: unavailable.
@@ -135,7 +135,7 @@ Use UUID primary keys, `timestamptz` for instants, `date` for IST study dates, c
 - `timezone`: initially `Asia/Kolkata`
 - `created_at`
 
-Seed one user named Varun. Authentication is independent of public sign-up.
+Create an application user when a Neon identity first signs in.
 
 ### `study_sessions`
 
@@ -284,9 +284,9 @@ Snapshot question ordering and selections so later bank changes cannot rewrite a
 - Do not retry invalid schemas indefinitely.
 - A protected daily Vercel Cron route sweeps stale `pending`, `processing`, and `retryable` jobs. Exact cron timing is not product-critical.
 - After the retry ceiling, retain the raw session, preserve the streak, mark processing `failed`, and allow a private server-side reprocess action.
-- Do not expose raw provider errors to Varun.
+- Do not expose raw provider errors to learners.
 
-Vercel Queues may replace the database-backed retry/sweeper mechanism later, but it is currently unnecessary for this one-user MVP and would add a beta dependency.
+Vercel Queues may replace the database-backed retry/sweeper mechanism later, but the database-backed approach is sufficient for the current scale.
 
 ## 8. LLM and retrieval pipeline
 

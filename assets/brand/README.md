@@ -25,7 +25,7 @@ The concepts were generated with the built-in image-generation tool using the `l
 
 ### Concept A prompt
 
-Create a refined, vector-friendly emblem with no wordmark for a Vercel-based SSC CGL study companion named Odhu Indhu. Combine an abstract open study ledger/book, a subtle rising-day motif, and a streak/tally idea. Incorporate restrained geometric rhythm inspired by Karnataka Kasuti embroidery without copying a specific traditional pattern. Use near-black, warm ivory, and deep vermilion on a transparent background. Keep it editorial, disciplined, high-contrast, and readable at small sizes. Avoid pastels, mascots, graduation caps, light bulbs, generic flames, photorealism, 3D, shadows, mockups, text, and watermarks.
+Create a refined, vector-friendly emblem with no wordmark for a Vercel-based study companion named Odhu Indhu. Combine an abstract open study ledger/book, a subtle rising-day motif, and a streak/tally idea. Incorporate restrained geometric rhythm inspired by Karnataka Kasuti embroidery without copying a specific traditional pattern. Use near-black, warm ivory, and deep vermilion on a transparent background. Keep it editorial, disciplined, high-contrast, and readable at small sizes. Avoid pastels, mascots, graduation caps, light bulbs, generic flames, photorealism, 3D, shadows, mockups, text, and watermarks.
 
 ### Concept B prompt
 

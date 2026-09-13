@@ -111,12 +111,12 @@ async function search(topic: string) {
       },
       body: JSON.stringify({
         objective:
-          "Authoritative evidence for SSC CGL practice on " +
+          "Authoritative evidence for practice questions on " +
           topic +
-          `. Research date: ${retrievedOn}. Prefer government, NCERT, established dictionaries, and educational institutions. For current affairs, prioritize recent official Karnataka government or PIB sources and retain explicit event dates. Retrieve definitions, factual details and worked examples.`,
+          `. Research date: ${retrievedOn}. Prefer primary sources, government publications, established dictionaries, textbooks, and educational institutions. For current affairs, prioritize recent official sources and retain explicit event dates. Retrieve definitions, factual details, and worked examples appropriate to the studied material.`,
         search_queries: [
           topic + " authoritative reference",
-          topic + " SSC CGL concepts " + retrievedOn.slice(0, 4),
+          topic + " core concepts " + retrievedOn.slice(0, 4),
         ],
       }),
     });
@@ -189,7 +189,7 @@ export async function processNext(sessionId?: string, userId?: string) {
       if (!evidence.length) throw new Error("NO_EVIDENCE");
       const existing: Question[] = set.questions;
       const candidates = await model(
-        "Create SSC CGL practice MCQs on the supplied studied topic, supported by the supplied evidence. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
+        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
         { topic: set.topic, evidence, existing: existing.map((q) => q.stem) },
         candidatesSchema,
         "quiz_candidates",

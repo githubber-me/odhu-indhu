@@ -6,6 +6,8 @@ import { Mark } from "@/app/mark";
 import { AuthIntro } from "@/app/auth/auth-intro";
 import { AuthView } from "@neondatabase/auth-ui";
 import { dailyHero } from "@/lib/daily-hero";
+import { WeeklyRitual, WeeklyState } from "@/app/weekly-ritual";
+import { weekLabel } from "@/lib/weekly-domain";
 type Session = {
   id: string;
   date: string;
@@ -27,10 +29,12 @@ type SetInfo = {
 type Data = {
   today: string;
   displayName: string;
+  email: string;
   recallVisible: boolean;
   sessions: Session[];
   sets: SetInfo[];
   attempts: { id: string; setId: string; score: number; count: number }[];
+  weekly: WeeklyState;
 };
 type Quiz = {
   id: string;
@@ -53,10 +57,19 @@ export default function Home() {
   const [data, setData] = useState<Data>({
     today: istDate(),
     displayName: "",
+    email: "",
     recallVisible: false,
     sessions: [],
     sets: [],
     attempts: [],
+    weekly: {
+      storageReady: false,
+      currentWeekStart: "",
+      planPending: false,
+      pendingSummaries: [],
+      reports: [],
+      voiceNotes: [],
+    },
   });
   const [tab, setTab] = useState<"today" | "history" | "quizzes">("today");
   const [content, setContent] = useState(""),
@@ -68,7 +81,8 @@ export default function Home() {
     [answers, setAnswers] = useState<number[]>([]),
     [review, setReview] = useState<Review | null>(null);
   const [settings, setSettings] = useState(false),
-    [legacy, setLegacy] = useState(false);
+    [legacy, setLegacy] = useState(false),
+    [profileName, setProfileName] = useState("");
   const entryId = useRef<string | null>(null),
     studyField = useRef<HTMLTextAreaElement>(null),
     draftLoaded = useRef(false),
@@ -173,6 +187,7 @@ export default function Home() {
     if (settings) dialog.current?.showModal();
     else dialog.current?.close();
   }, [settings]);
+  useEffect(() => setProfileName(data.displayName), [data.displayName]);
   const stats = streakStats(data.sessions, data.today),
     todayEntries = data.sessions.filter((s) => s.date === data.today),
     available = data.sets.filter((s) => !s.locked && s.count > 0),
@@ -232,6 +247,19 @@ export default function Home() {
       await reload();
     } catch (e) {
       setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveProfile(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api("profile", { displayName: profileName });
+      await reload();
+      setNotice("Your name has been updated.");
+    } catch (error) {
+      setNotice((error as Error).message);
     } finally {
       setBusy(false);
     }
@@ -338,6 +366,11 @@ export default function Home() {
         </section>
       ) : gate === "open" ? (
         <>
+          <WeeklyRitual
+            weekly={data.weekly}
+            onChanged={reload}
+            onNotice={setNotice}
+          />
           <section className="hero">
             <div>
               <p className="eyebrow">
@@ -840,10 +873,65 @@ export default function Home() {
             >
               ×
             </button>
-            <p className="eyebrow">YOUR LEDGER, YOURS TO KEEP</p>
+            <p className="eyebrow">YOUR SPACE</p>
             <h2>
-              Take your <em>progress.</em>
+              Your name. Your <em>record.</em>
             </h2>
+            <form className="profileForm" onSubmit={saveProfile}>
+              <label htmlFor="profile-name">DISPLAY NAME</label>
+              <div>
+                <input
+                  id="profile-name"
+                  value={profileName}
+                  minLength={1}
+                  maxLength={60}
+                  required
+                  onChange={(event) => setProfileName(event.target.value)}
+                />
+                <button
+                  className="outlineButton"
+                  disabled={busy || profileName.trim() === data.displayName}
+                >
+                  SAVE
+                </button>
+              </div>
+              {data.email && <small>{data.email}</small>}
+            </form>
+            {(data.weekly.reports.length > 0 ||
+              data.weekly.voiceNotes.length > 0) && (
+              <section className="weeklyArchive">
+                <p className="eyebrow">YOUR WEEKS</p>
+                {data.weekly.reports.map((report) => (
+                  <a
+                    className="archiveReport"
+                    href={`/api/weekly/report?id=${encodeURIComponent(report.id)}`}
+                    onClick={() => window.setTimeout(() => reload().catch(() => {}), 1000)}
+                    key={report.id}
+                  >
+                    <span>
+                      <b>WEEKLY PDF</b>
+                      {weekLabel(report.weekStart)}
+                    </span>
+                    <strong>PDF ↓</strong>
+                  </a>
+                ))}
+                {data.weekly.voiceNotes.map((note) => (
+                  <article className="archiveVoice" key={note.id}>
+                    <div>
+                      <b>{note.kind === "plan" ? "WEEKLY INTENTION" : "WEEKLY REFLECTION"}</b>
+                      <span>{weekLabel(note.weekStart)}</span>
+                    </div>
+                    <audio
+                      controls
+                      preload="none"
+                      src={`/api/weekly/voice?id=${encodeURIComponent(note.id)}`}
+                    >
+                      Your browser cannot play this voice note.
+                    </audio>
+                  </article>
+                ))}
+              </section>
+            )}
             <p className="modalCopy">
               Download your study records anytime. Question exports include
               completed topics.

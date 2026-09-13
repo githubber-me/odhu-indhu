@@ -2,7 +2,7 @@
 
 **ಓದು ಇಂದು. A little more, every day.**
 
-Odhu Indhu is a quiet study companion built for Varun's SSC CGL preparation. The idea is simple: write down what you studied, complete an honest hour, and return tomorrow. The app turns those ordinary days into a visible streak and, after a little distance, into useful recall.
+Odhu Indhu is a quiet study companion built around one simple practice: write down what you studied, complete an honest hour, and return tomorrow. The app turns those ordinary days into a visible streak and, after a little distance, into useful recall.
 
 ![Odhu Indhu daily study ledger](docs/screenshots/dashboard-desktop.png)
 
@@ -14,6 +14,7 @@ Odhu Indhu is a quiet study companion built for Varun's SSC CGL preparation. The
 - **Questions begin with evidence.** Parallel finds reliable sources, then Sarvam generates and critiques ten MCQs for every parsed topic.
 - **The interface has its own voice.** Forty Kannada and English messages rotate daily without repeating inside a cycle.
 - **Answers stay private until submission.** The review then explains the right answer, every distractor, and the sources used.
+- **Weeks have a beginning and an ending.** Private voice notes hold the learner's Monday intention and Sunday reflection. The following Monday turns sealed work into a deterministic PDF report.
 
 ## The experience
 
@@ -44,7 +45,7 @@ npm run dev
 
 Enable Google and Magic Link in Neon Auth, leave password credentials disabled, then open [localhost:3000](http://localhost:3000).
 
-The main environment values are `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `CRON_SECRET`, `SARVAM_API_KEY`, and `PARALLEL_API_KEY`. Neon's Vercel integration may provide the Auth URL as `DATABASE_NEON_AUTH_BASE_URL`; the app accepts that name too.
+The main environment values are `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `CRON_SECRET`, `SARVAM_API_KEY`, `PARALLEL_API_KEY`, and `BLOB_READ_WRITE_TOKEN`. Connect a private Vercel Blob store for weekly voice notes. Neon's Vercel integration may provide the Auth URL as `DATABASE_NEON_AUTH_BASE_URL`; the app accepts that name too.
 
 ## Built with
 

@@ -1,11 +1,13 @@
 CREATE TABLE IF NOT EXISTS app_users (
  id uuid PRIMARY KEY, handle text NOT NULL UNIQUE,
  display_name text NOT NULL, email text,
+ display_name_edited boolean NOT NULL DEFAULT false,
  auth_provider text, auth_subject text, created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(auth_provider, auth_subject)
 );
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name text;
 ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name_edited boolean NOT NULL DEFAULT false;
 UPDATE app_users SET display_name=initcap(handle) WHERE display_name IS NULL;
 ALTER TABLE app_users ALTER COLUMN display_name SET NOT NULL;
 ALTER TABLE app_users DROP COLUMN IF EXISTS password_hash;
@@ -41,6 +43,35 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
 DROP TABLE IF EXISTS auth_sessions;
 CREATE TABLE IF NOT EXISTS rate_limits (
  key text PRIMARY KEY, count integer NOT NULL, expires_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS weekly_voice_notes (
+ id uuid PRIMARY KEY,
+ user_id uuid NOT NULL REFERENCES app_users(id),
+ week_start text NOT NULL,
+ kind text NOT NULL CHECK(kind IN ('plan','reflection')),
+ blob_url text NOT NULL,
+ blob_pathname text NOT NULL,
+ content_type text NOT NULL,
+ size_bytes integer NOT NULL CHECK(size_bytes BETWEEN 1 AND 26214400),
+ transcript text,
+ structured jsonb NOT NULL DEFAULT '{}',
+ status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','transcribing','ready','failed')),
+ sarvam_job_id text,
+ attempts integer NOT NULL DEFAULT 0,
+ leased_until timestamptz,
+ error_code text,
+ uploaded_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(user_id,week_start,kind)
+);
+CREATE INDEX IF NOT EXISTS weekly_voice_notes_work ON weekly_voice_notes(status,leased_until,uploaded_at);
+CREATE TABLE IF NOT EXISTS weekly_reports (
+ id uuid PRIMARY KEY,
+ user_id uuid NOT NULL REFERENCES app_users(id),
+ week_start text NOT NULL,
+ metrics jsonb NOT NULL,
+ generated_at timestamptz NOT NULL DEFAULT now(),
+ downloaded_at timestamptz,
+ UNIQUE(user_id,week_start)
 );
 ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS failures integer NOT NULL DEFAULT 0;
 ALTER TABLE study_sessions ADD COLUMN IF NOT EXISTS user_id uuid NOT NULL DEFAULT '00000000-0000-4000-8000-000000000001';

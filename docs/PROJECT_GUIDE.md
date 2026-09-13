@@ -2,7 +2,7 @@
 
 Odhu Indhu is a quiet study companion built around a simple promise: show up, record the work, and come back tomorrow.
 
-It began as a personal SSC CGL companion for Varun, but the application already keeps each person's data separate. A student can sign in with Google or a Magic Link, record any subject they studied, build a streak using IST calendar days, and later answer carefully researched MCQs generated from their own notes.
+Each person's data stays separate. A student can sign in with Google or a Magic Link, record any subject they studied, build a streak using IST calendar days, and later answer carefully researched MCQs generated from their own notes.
 
 The visual language is deliberately restrained. Warm paper, black type, Karnataka red, strong borders, and typewriter details keep the interface focused without making it feel clinical.
 
@@ -111,8 +111,10 @@ The application uses a small number of direct, parameterized SQL queries. There 
 | `topic_sets` | Stores parsed topics, evidence, generated questions and unlock dates |
 | `quiz_attempts` | Freezes questions for an attempt and records answers and score |
 | `rate_limits` | Applies small database-backed limits to sensitive actions |
+| `weekly_voice_notes` | Stores private audio references, transcripts and one-time structured elements |
+| `weekly_reports` | Stores deterministic weekly metrics and PDF download state |
 
-Every study session, topic set and attempt carries `user_id`. The first authenticated account can claim the seeded Varun record, which preserves any data created before authentication was introduced. Every later Neon identity receives an independent account.
+Every study session, topic set and attempt carries `user_id`. Each Neon identity receives an independent application account. A compatibility path can still attach a legacy unclaimed record to its first authenticated owner, preserving data from installations that existed before authentication.
 
 ## Authentication and security
 
