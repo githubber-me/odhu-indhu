@@ -122,8 +122,19 @@ export default function Home() {
     field.style.height = Math.min(field.scrollHeight, 320) + "px";
   }, [content]);
   useEffect(() => {
-    api("status")
-      .then(async (state) => {
+    let playOpening = false;
+    try {
+      playOpening =
+        sessionStorage.getItem("odhu-indhu-opening-played") !== "1" &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (playOpening)
+        sessionStorage.setItem("odhu-indhu-opening-played", "1");
+    } catch {}
+    const opening = playOpening
+      ? new Promise((resolve) => setTimeout(resolve, 2400))
+      : Promise.resolve();
+    Promise.all([api("status"), opening])
+      .then(async ([state]) => {
         if (!state.configured) setGate("setup");
         else if (!state.authenticated) setGate("login");
         else {
@@ -278,7 +289,26 @@ export default function Home() {
             />
           </section>
         </section>
-      ) : gate !== "open" ? (
+      ) : gate === "loading" ? (
+        <section className="ledgerLoading" aria-live="polite">
+          <div>
+            <div className="openingSequence" aria-hidden="true">
+              {[1, 2, 3, 4].map((frame) => (
+                <img
+                  className={`openingFrame openingFrame${frame}`}
+                  src={`/opening-ledger/frame-${frame}.png`}
+                  alt=""
+                  width="512"
+                  height="512"
+                  fetchPriority={frame === 1 ? "high" : "auto"}
+                  key={frame}
+                />
+              ))}
+            </div>
+            <p role="status">Opening your ledger…</p>
+          </div>
+        </section>
+      ) : gate === "setup" ? (
         <section className="welcome">
           <p className="eyebrow">ಓದು ಇಂದು · A LITTLE MORE, EVERY DAY</p>
           <h1>
@@ -290,27 +320,23 @@ export default function Home() {
             An hour of focus. A record of progress.
             <br />A little recall, when it matters.
           </p>
-          {gate === "loading" ? (
-            <p role="status">Opening your ledger…</p>
-          ) : gate === "setup" ? (
-            <div className="setupCard">
-              <p className="eyebrow">YOUR LEDGER IS ALMOST READY</p>
-              <h2>
-                Preparing your <em>space.</em>
-              </h2>
-              <p>
-                Private access is being configured. Once it’s ready, you can
-                start your first study streak here.
-              </p>
-            </div>
-          ) : null}
+          <div className="setupCard">
+            <p className="eyebrow">YOUR LEDGER IS ALMOST READY</p>
+            <h2>
+              Preparing your <em>space.</em>
+            </h2>
+            <p>
+              Private access is being configured. Once it’s ready, you can
+              start your first study streak here.
+            </p>
+          </div>
           {notice && (
             <p role="alert" className="notice">
               {notice}
             </p>
           )}
         </section>
-      ) : (
+      ) : gate === "open" ? (
         <>
           <section className="hero">
             <div>
@@ -852,7 +878,7 @@ export default function Home() {
             </button>
           </dialog>
         </>
-      )}
+      ) : null}
       <footer className="footer">
         <span>ಓದು ಇಂದು</span>
         <span>A LITTLE MORE, EVERY DAY.</span>

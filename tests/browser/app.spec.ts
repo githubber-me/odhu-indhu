@@ -1,11 +1,17 @@
 import { test, expect } from "@playwright/test";
 const id = "550e8400-e29b-41d4-a716-446655440000";
 test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
-  await page.route("**/api/status", (route) =>
-    route.fulfill({ json: { configured: true, authenticated: false } }),
-  );
+  await page.route("**/api/status", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await route.fulfill({ json: { configured: true, authenticated: false } });
+  });
   await page.goto("/auth/sign-in");
   await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("status")).toHaveText("Opening your ledger…");
+  await expect(page.locator(".openingFrame")).toHaveCount(4);
+  await expect(page.getByText("A quiet place")).toHaveCount(0);
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: "test-results/opening.png", fullPage: true });
   await expect(
     page.getByRole("heading", { name: "baa appi, odhi nodu." }),
   ).toBeVisible();
