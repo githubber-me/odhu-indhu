@@ -25,6 +25,7 @@ Neon’s Vercel integration already supplies `DATABASE_URL` and `DATABASE_NEON_A
 - Sessions are idempotent and immutable in PostgreSQL.
 - Every study session, topic set, and quiz attempt carries a stable internal user ID. The first authenticated Neon user claims the seeded `varun` record, preserving any pre-authentication history; later users receive isolated accounts.
 - Neon Auth owns Google OAuth, passwordless Magic Link, session cookies, and email delivery. Password credentials are disabled. The application stores only the Neon subject-to-internal-user mapping needed for its own data.
+- Sign-in is embedded on the home screen. Next.js Proxy completes Neon’s OAuth verifier exchange; `/auth/sign-in` redirects home while `/auth/callback` remains the secure provider return route.
 - AI routes require login and origin checks. Cron requires its own bearer secret.
 - Topics are extracted privately; Parallel supplies evidence, Sarvam generates MCQs and independently critiques correctness and ambiguity. Accepted questions accumulate toward ten per topic. Partial results retain only accepted questions.
 - Quiz questions remain on the server until their IST unlock date. Answers and explanations are omitted until submission, which freezes the answer set transactionally.
@@ -54,6 +55,7 @@ Sarvam standard JSON output and Parallel search passed small live checks without
 - `lib/domain.ts`: dates, streaks, validation, answer projection, CSV serialization.
 - `lib/db.ts`, `db/001_initial.sql`: database connection and repeatable migration.
 - `lib/auth.ts`: Neon Auth, internal user mapping, origin checks, rate limits, and cron authorization.
+- `lib/neon-auth.ts`, `proxy.ts`: shared Neon configuration, OAuth verifier exchange, and page-level session routing.
 - `lib/pipeline.ts`: bounded topic generation and critique with persistent retries.
 - `app/api/[...path]/route.ts`: protected API and export endpoints.
 - `app/auth/[path]/page.tsx`: Neon Auth’s Google and passwordless Magic Link screens.

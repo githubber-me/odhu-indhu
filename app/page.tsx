@@ -3,6 +3,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { istDate, shiftDate, streakStats, Question } from "@/lib/domain";
 import { authClient } from "@/lib/auth-client";
 import { Mark } from "@/app/mark";
+import { AuthIntro } from "@/app/auth/auth-intro";
+import { AuthView } from "@neondatabase/auth-ui";
 type Session = {
   id: string;
   date: string;
@@ -65,6 +67,8 @@ export default function Home() {
   const [settings, setSettings] = useState(false),
     [legacy, setLegacy] = useState(false);
   const entryId = useRef<string | null>(null),
+    studyField = useRef<HTMLTextAreaElement>(null),
+    draftLoaded = useRef(false),
     dialog = useRef<HTMLDialogElement>(null);
   const api = useCallback(async (path: string, body?: unknown) => {
     const response = await fetch("/api/" + path, {
@@ -82,12 +86,48 @@ export default function Home() {
   }, []);
   const reload = useCallback(async () => setData(await api("data")), [api]);
   useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("odhu-indhu-entry-draft");
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (typeof draft.content === "string") setContent(draft.content);
+        if (
+          Number.isInteger(draft.duration) &&
+          draft.duration >= 1 &&
+          draft.duration <= 720
+        )
+          setDuration(draft.duration);
+      }
+    } catch {}
+    draftLoaded.current = true;
+  }, []);
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    try {
+      if (content)
+        sessionStorage.setItem(
+          "odhu-indhu-entry-draft",
+          JSON.stringify({ content, duration }),
+        );
+      else sessionStorage.removeItem("odhu-indhu-entry-draft");
+    } catch {}
+  }, [content, duration]);
+  useEffect(() => {
+    const field = studyField.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = Math.min(field.scrollHeight, 320) + "px";
+  }, [content]);
+  useEffect(() => {
     api("status")
       .then(async (state) => {
         if (!state.configured) setGate("setup");
-        else if (!state.authenticated) window.location.replace("/auth/sign-in");
+        else if (!state.authenticated) setGate("login");
         else {
           await reload();
+          try {
+            localStorage.setItem("odhu-indhu-has-entered", "1");
+          } catch {}
           setGate("open");
         }
       })
@@ -132,6 +172,9 @@ export default function Home() {
       entryId.current = null;
       setContent("");
       setDuration(60);
+      try {
+        sessionStorage.removeItem("odhu-indhu-entry-draft");
+      } catch {}
       await reload();
       setNotice("Entry sealed. A little more knowledge, kept.");
     } catch (e) {
@@ -220,7 +263,18 @@ export default function Home() {
           )}
         </div>
       </header>
-      {gate !== "open" ? (
+      {gate === "login" ? (
+        <section className="inlineAuth">
+          <AuthIntro />
+          <section className="authPanel">
+            <AuthView
+              path="sign-in"
+              callbackURL="/auth/callback?redirectTo=/"
+              redirectTo="/"
+            />
+          </section>
+        </section>
+      ) : gate !== "open" ? (
         <section className="welcome">
           <p className="eyebrow">ಓದು ಇಂದು · A LITTLE MORE, EVERY DAY</p>
           <h1>
@@ -245,15 +299,7 @@ export default function Home() {
                 start your first study streak here.
               </p>
             </div>
-          ) : (
-            <div className="setupCard authPrompt">
-              <p className="eyebrow">SECURE SIGN-IN</p>
-              <p>Your session has ended. Sign in to reopen your ledger.</p>
-              <a className="primaryButton" href="/auth/sign-in">
-                SIGN IN ↗
-              </a>
-            </div>
-          )}
+          ) : null}
           {notice && (
             <p role="alert" className="notice">
               {notice}
@@ -374,6 +420,7 @@ export default function Home() {
                 <label htmlFor="study">WHAT DID YOU STUDY?</label>
                 <textarea
                   id="study"
+                  ref={studyField}
                   required
                   minLength={3}
                   maxLength={12000}
@@ -382,30 +429,65 @@ export default function Home() {
                     setContent(e.target.value);
                     entryId.current = null;
                   }}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
                   placeholder="Percentages: successive changes and 20 profit & loss problems. Revised fundamental rights…"
                   rows={4}
                 />
+                <div className="entryAssist" aria-live="polite">
+                  <span>{content.length.toLocaleString("en-IN")} / 12,000</span>
+                  <span>⌘ / CTRL + ENTER TO SEAL</span>
+                </div>
                 <div className="formFooter">
-                  <label className="duration" htmlFor="duration">
-                    TIME SPENT{" "}
-                    <span>
-                      <input
-                        id="duration"
-                        type="number"
-                        required
-                        min={1}
-                        max={720}
-                        step={1}
-                        value={duration}
-                        onChange={(e) => {
-                          setDuration(Number(e.target.value));
-                          entryId.current = null;
-                        }}
-                      />{" "}
-                      MIN
-                    </span>
-                  </label>
-                  <button className="primaryButton" disabled={busy}>
+                  <div className="durationBlock">
+                    <label className="duration" htmlFor="duration">
+                      TIME SPENT{" "}
+                      <span>
+                        <input
+                          id="duration"
+                          type="number"
+                          required
+                          min={1}
+                          max={720}
+                          step={1}
+                          value={duration}
+                          onChange={(e) => {
+                            setDuration(Number(e.target.value));
+                            entryId.current = null;
+                          }}
+                        />{" "}
+                        MIN
+                      </span>
+                    </label>
+                    <div className="durationPresets" aria-label="Quick duration">
+                      {[30, 45, 60, 90, 120].map((minutes) => (
+                        <button
+                          type="button"
+                          key={minutes}
+                          aria-pressed={duration === minutes}
+                          onClick={() => {
+                            setDuration(minutes);
+                            entryId.current = null;
+                          }}
+                        >
+                          {minutes}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    className="primaryButton"
+                    disabled={
+                      busy ||
+                      content.trim().length < 3 ||
+                      duration < 1 ||
+                      duration > 720
+                    }
+                  >
                     {busy ? "SAVING…" : "SEAL ENTRY ↗"}
                   </button>
                 </div>

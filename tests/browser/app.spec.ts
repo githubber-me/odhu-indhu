@@ -1,12 +1,27 @@
 import { test, expect } from "@playwright/test";
 const id = "550e8400-e29b-41d4-a716-446655440000";
 test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
+  await page.route("**/api/status", (route) =>
+    route.fulfill({ json: { configured: true, authenticated: false } }),
+  );
   await page.goto("/auth/sign-in");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole("heading", { name: "Begin with one honest hour." }),
+  ).toBeVisible();
   await expect(page.getByText("Sign In", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: /email/i })).toBeVisible();
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: /google/i })).toBeVisible();
+  await expect(page.locator(".authRevealFour")).toHaveCSS("opacity", "1");
   await page.screenshot({ path: "test-results/auth.png", fullPage: true });
+  await page.evaluate(() =>
+    localStorage.setItem("odhu-indhu-has-entered", "1"),
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Pick up where you left off." }),
+  ).toBeVisible();
 });
 test("unconfigured app keeps writes closed and presents a calm setup screen", async ({
   page,
@@ -99,7 +114,16 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto("/");
   await expect(page.getByText("✓ DAY COMPLETE")).toBeVisible();
+  await page.getByLabel("WHAT DID YOU STUDY?").fill("Indian monsoon patterns");
+  await expect(page.getByText("23 / 12,000")).toBeVisible();
+  await page.getByRole("button", { name: "90m" }).click();
+  await expect(page.getByLabel("TIME SPENT")).toHaveValue("90");
   await page.screenshot({ path: "test-results/desktop.png", fullPage: true });
+  await page.reload();
+  await expect(page.getByLabel("WHAT DID YOU STUDY?")).toHaveValue(
+    "Indian monsoon patterns",
+  );
+  await expect(page.getByLabel("TIME SPENT")).toHaveValue("90");
   await page.getByRole("button", { name: "02 / THE LEDGER" }).click();
   await expect(page.getByText("Proof you showed up.")).toBeVisible();
   await page.getByRole("button", { name: "03 / RECALL" }).click();
