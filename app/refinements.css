@@ -1,0 +1,410 @@
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 4px;
+}
+.brand,
+.eyebrow,
+h1,
+h2,
+.tabs button,
+.metricStrip,
+.primaryButton {
+  font-family: "Courier New", monospace;
+}
+.brand {
+  letter-spacing: 0.09em;
+}
+.heroCopy {
+  color: var(--muted);
+  margin: 23px 0 0;
+  font-size: 15px;
+}
+.hero {
+  padding: 64px 0 45px;
+}
+.metricStrip {
+  display: flex;
+  gap: 35px;
+  padding: 21px 0;
+  border-bottom: 1px solid var(--line);
+  font: 10px monospace;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.metricStrip b {
+  color: var(--ink);
+  font-size: 17px;
+  margin-right: 8px;
+}
+.badge {
+  display: inline-grid;
+  place-items: center;
+  background: var(--red);
+  color: var(--paper);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  font-size: 9px;
+}
+.banner {
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+.welcome {
+  padding: 90px 0 100px;
+  min-height: 75vh;
+}
+.welcome h1 {
+  font-size: clamp(44px, 7vw, 88px);
+  margin: 26px 0;
+}
+.welcomeCopy {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: 40px;
+}
+.setupCard {
+  max-width: 530px;
+  border: 1px solid var(--line);
+  padding: 26px;
+  margin-top: 40px;
+}
+.setupCard h2 {
+  margin-top: 18px;
+}
+.setupCard p:last-child {
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0;
+}
+.loginForm {
+  max-width: 540px;
+  margin-top: 40px;
+}
+.loginForm label {
+  font: 600 10px monospace;
+  letter-spacing: 0.1em;
+  display: block;
+  margin-bottom: 12px;
+}
+.loginForm > div {
+  display: flex;
+  gap: 10px;
+}
+.loginForm input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--ink);
+  background: transparent;
+  padding: 14px;
+}
+.processingText {
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+  margin-top: 9px;
+}
+.textButton {
+  background: none;
+  border: 0;
+  color: var(--red);
+  padding: 6px 9px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-size: 12px;
+}
+.dayGrid {
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+}
+.day {
+  background: transparent;
+  text-align: left;
+}
+.day.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.historyEntries {
+  margin-top: 44px;
+}
+.historyEntries > .eyebrow {
+  margin-bottom: 22px;
+}
+.outlineButton {
+  background: transparent;
+  border: 1px solid var(--ink);
+  font: 600 11px monospace;
+  letter-spacing: 0.07em;
+  padding: 13px 16px;
+  white-space: nowrap;
+}
+.outlineButton:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+.recallEmpty {
+  text-align: center;
+  padding: 65px 20px;
+  border: 1px solid var(--line);
+  margin: 32px 0;
+}
+.largeSymbol {
+  display: block;
+  font: 80px monospace;
+  color: var(--red);
+  margin-bottom: 16px;
+}
+.recallEmpty h3 {
+  font:
+    500 21px "Courier New",
+    monospace;
+}
+.recallEmpty p {
+  font-size: 14px;
+  color: var(--muted);
+}
+.quizTitle {
+  font:
+    500 36px "Courier New",
+    monospace;
+  letter-spacing: -0.04em;
+  margin: 28px 0 14px;
+}
+.question {
+  padding: 26px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  margin: 25px 0;
+  min-width: 0;
+}
+.question legend,
+.question h3 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.answerOption {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid var(--line);
+  padding: 16px;
+  margin: 10px 0;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.answerOption.chosen {
+  border-color: var(--red);
+  background: #a51c2008;
+}
+.answerOption input {
+  accent-color: var(--red);
+}
+.optionLetter {
+  font: 600 13px monospace;
+  color: var(--red);
+}
+.quizSubmit {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  bottom: 0;
+  background: var(--paper);
+  padding: 18px 0;
+  border-top: 1px solid var(--ink);
+}
+.quizSubmit p {
+  margin: 0;
+  font-size: 12px;
+}
+.scorePanel {
+  padding: 32px;
+  background: var(--ink);
+  color: var(--paper);
+  margin: 30px 0;
+}
+.scorePanel > .eyebrow {
+  color: #d8d1c5;
+}
+.scorePanel strong {
+  display: block;
+  font:
+    60px "Courier New",
+    monospace;
+  margin: 15px 0;
+}
+.scorePanel small {
+  font-size: 24px;
+}
+.scorePanel p:last-child {
+  margin: 0;
+  line-height: 1.5;
+}
+.solution {
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.optionReview {
+  padding: 16px;
+  border-left: 2px solid var(--line);
+  margin: 12px 0;
+}
+.optionReview.correct {
+  border-color: var(--red);
+  background: #a51c2007;
+}
+.optionReview p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.sources {
+  display: flex;
+  gap: 18px;
+  margin-top: 20px;
+}
+.sources a {
+  font-size: 12px;
+  color: var(--red);
+}
+dialog.modal {
+  max-height: 90vh;
+  overflow: auto;
+  color: var(--ink);
+}
+dialog::backdrop {
+  background: #1118;
+  backdrop-filter: blur(3px);
+}
+.exportLinks {
+  margin: 25px 0;
+}
+.exportLinks a {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: var(--ink);
+  font-size: 14px;
+}
+.exportLinks span {
+  font: 11px monospace;
+  color: var(--red);
+}
+.footer {
+  margin-top: 20px;
+}
+.sessionRow p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.quizCard h3 {
+  overflow-wrap: anywhere;
+}
+.quizCard {
+  gap: 20px;
+}
+@media (max-width: 700px) {
+  .topMeta > span {
+    display: none;
+  }
+  .hero h1 {
+    font-size: clamp(34px, 8.5vw, 48px);
+  }
+  .hero {
+    gap: 12px;
+  }
+  .streakStamp {
+    width: 100px;
+    height: 115px;
+  }
+  .heroCopy {
+    font-size: 12px;
+    max-width: 220px;
+  }
+  .metricStrip {
+    gap: 12px;
+    justify-content: space-between;
+    font-size: 8px;
+  }
+  .metricStrip b {
+    display: block;
+    margin-bottom: 6px;
+  }
+  .tabs {
+    justify-content: space-between;
+    gap: 9px;
+  }
+  .tabs button {
+    font-size: 9px;
+  }
+  .dayGrid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 7px;
+  }
+  .day {
+    padding: 8px;
+    min-height: 52px;
+  }
+  .day small {
+    font-size: 10px;
+  }
+  .status {
+    font-size: 8px;
+    padding: 8px;
+  }
+  .welcome {
+    padding: 60px 0;
+  }
+  .welcome .eyebrow {
+    font-size: 8px;
+    line-height: 1.8;
+  }
+  .loginForm > div {
+    flex-direction: column;
+  }
+  .quizCard h3 {
+    font-size: 19px;
+  }
+  .quizCard p {
+    line-height: 1.6;
+  }
+  .formFooter {
+    gap: 15px;
+  }
+  .duration {
+    font-size: 8px !important;
+    gap: 8px;
+  }
+  .primaryButton {
+    font-size: 10px;
+    padding: 14px;
+  }
+  .recallEmpty {
+    padding: 35px 16px;
+  }
+  .sessionRow {
+    grid-template-columns: 55px minmax(0, 1fr);
+  }
+  .quizTitle {
+    font-size: 28px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
