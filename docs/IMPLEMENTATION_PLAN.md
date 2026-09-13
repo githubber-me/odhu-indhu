@@ -1,4 +1,4 @@
-# Odhu Indhu — implementation plan
+# Odhu Indhu: implementation plan
 
 Status: build-ready product and technical specification. This document is planning only; no application implementation is included.
 
@@ -132,7 +132,7 @@ Use UUID primary keys, `timestamptz` for instants, `date` for IST study dates, c
 
 - `id`
 - `display_name`
-- `timezone` — initially `Asia/Kolkata`
+- `timezone`: initially `Asia/Kolkata`
 - `created_at`
 
 Seed one user named Varun. Authentication is independent of public sign-up.
@@ -146,7 +146,7 @@ Seed one user named Varun. Authentication is independent of public sign-up.
 - `raw_content`
 - `submitted_at`
 - `idempotency_key`
-- `processing_status` — `pending | processing | ready | partial | failed`
+- `processing_status`: `pending | processing | ready | partial | failed`
 
 `raw_content`, `duration_minutes`, `study_date`, and `submitted_at` are immutable. Enforce uniqueness on `(user_id, idempotency_key)`.
 
@@ -181,8 +181,8 @@ Deduplicate matching `normalized_key` values within the same `user_id + study_da
 
 - `id`
 - `study_session_id`
-- `stage` — `parse | retrieve | generate | critique | persist`
-- `status` — `queued | running | succeeded | retryable | exhausted`
+- `stage`: `parse | retrieve | generate | critique | persist`
+- `status`: `queued | running | succeeded | retryable | exhausted`
 - `attempt_count`
 - `last_error_code`
 - `started_at`
@@ -197,7 +197,7 @@ Never store credentials, complete provider payloads, reasoning traces, or secret
 - `parsed_topic_id`
 - `source_study_date`
 - `available_on`
-- `status` — `generating | ready | partial | failed`
+- `status`: `generating | ready | partial | failed`
 - `accepted_count`
 - `created_at`
 
@@ -208,10 +208,10 @@ Never store credentials, complete provider payloads, reasoning traces, or secret
 - `id`
 - `question_set_id`
 - `question_text`
-- `difficulty` — `easy | medium | hard`
-- `question_kind` — `factual | quantitative | reasoning | language`
+- `difficulty`: `easy | medium | hard`
+- `question_kind`: `factual | quantitative | reasoning | language`
 - `solution`
-- `verification_status` — `accepted | rejected | needs_review`
+- `verification_status`: `accepted | rejected | needs_review`
 - `generator_model`
 - `critic_model`
 - `content_hash`
@@ -223,7 +223,7 @@ Only `accepted` questions can enter a quiz. Use `content_hash` to suppress dupli
 
 - `id`
 - `question_id`
-- `position` — `A | B | C | D`
+- `position`: `A | B | C | D`
 - `option_text`
 - `is_correct`
 - `explanation`
@@ -241,13 +241,13 @@ Database constraints plus application validation must ensure exactly four option
 - `retrieved_at`
 - `evidence_excerpt`
 - `evidence_hash`
-- `source_role` — `primary | corroborating | definition`
+- `source_role`: `primary | corroborating | definition`
 
 ### `quiz_sessions`
 
 - `id`
 - `user_id`
-- `mode` — `topic | weekly_blast | review`
+- `mode`: `topic | weekly_blast | review`
 - `topic_label`
 - `started_at`
 - `submitted_at`
@@ -290,7 +290,7 @@ Vercel Queues may replace the database-backed retry/sweeper mechanism later, but
 
 ## 8. LLM and retrieval pipeline
 
-### Stage A — parse
+### Stage A: parse
 
 Send only the raw entry and its study context to Sarvam. Require strict JSON matching a versioned schema:
 
@@ -303,7 +303,7 @@ Send only the raw entry and its study context to Sarvam. Require strict JSON mat
 
 Use low temperature. When using GLM-5.2 structured output, disable its thinking mode for reliable JSON. Validate with Zod and retry once with a repair prompt if necessary.
 
-### Stage B — retrieve evidence
+### Stage B: retrieve evidence
 
 For each unique parsed topic, call Parallel with a self-contained objective and 2–3 concise queries. Retrieval policy varies by question kind:
 
@@ -314,7 +314,7 @@ For each unique parsed topic, call Parallel with a self-contained objective and 
 
 Store only the evidence used for accepted questions. Record retrieval time because factual validity can age.
 
-### Stage C — generate candidates
+### Stage C: generate candidates
 
 Ask for 12–14 candidates per topic so weak questions can be rejected while retaining 10. Every candidate must include:
 
@@ -327,7 +327,7 @@ Ask for 12–14 candidates per topic so weak questions can be rejected while ret
 - Evidence references for factual claims.
 - Structured calculation inputs for supported quantitative templates.
 
-### Stage D — deterministic validation
+### Stage D: deterministic validation
 
 Reject candidates that fail any rule:
 
@@ -342,7 +342,7 @@ Reject candidates that fail any rule:
 
 For supported Quant and Reasoning templates, recompute the result in application code and require it to match the marked answer.
 
-### Stage E — critic pass
+### Stage E: critic pass
 
 Use a separate generation-time Sarvam call and a different prompt to judge each candidate against its evidence. The critic returns only structured verdicts and reason codes. It must explicitly test whether any distractor could also be correct.
 
@@ -376,15 +376,15 @@ All mutation routes require authentication, origin/CSRF checks, rate limits, Zod
 - `GET /api/history?from=&to=`
 - `GET /api/streak`
 - `GET /api/quizzes/available`
-- `POST /api/quiz-sessions` — creates a persisted quiz from an available set.
-- `GET /api/quiz-sessions/:id` — omits correctness and explanations before submission.
-- `POST /api/quiz-sessions/:id/submit` — transactionally freezes answers and returns review data.
+- `POST /api/quiz-sessions`: creates a persisted quiz from an available set.
+- `GET /api/quiz-sessions/:id`: omits correctness and explanations before submission.
+- `POST /api/quiz-sessions/:id/submit`: transactionally freezes answers and returns review data.
 - `GET /api/progress`
 - `GET /api/exports/raw.csv`
 - `GET /api/exports/topics.csv`
 - `GET /api/exports/questions.csv`
 - `GET /api/exports/attempts.csv`
-- `GET /api/cron/retry-processing` — Vercel Cron secret only.
+- `GET /api/cron/retry-processing`: Vercel Cron secret only.
 
 Never serialize `is_correct`, solutions, option explanations, or evidence excerpts into the pre-submission page payload. Hiding them with CSS is not security.
 
@@ -529,4 +529,3 @@ The MVP is complete only when:
 - Raw, structured, question, and attempt data can be downloaded as authenticated CSV.
 - Neither provider key appears in client bundles, logs, database rows, or exports.
 - The primary interface remains usable at mobile and desktop widths with keyboard navigation and accessible contrast.
-

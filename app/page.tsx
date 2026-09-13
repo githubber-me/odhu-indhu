@@ -581,7 +581,7 @@ export default function Home() {
                   >
                     <span>{date.slice(-2)}</span>
                     <small>
-                      {stats.totals[date] ? stats.totals[date] + "m" : "—"}
+                      {stats.totals[date] ? stats.totals[date] + "m" : "·"}
                     </small>
                   </button>
                 ))}

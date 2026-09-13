@@ -17,7 +17,7 @@ export const DAILY_HEROES: readonly DailyHero[] = [
   { lead: "ಜಾಸ್ತಿ ಬೇಡ.", accent: "Consistency ಸಾಕು.", support: "One focused hour can carry the day." },
   { lead: "Read. Record.", accent: "Return.", support: "Small sessions become a formidable streak." },
   { lead: "ಓದಿಗೆ", accent: "ಹಾಜರಾಗು.", support: "Progress begins when you simply show up." },
-  { lead: "Do the hour.", accent: "Earn the day.", support: "No performance—just honest preparation." },
+  { lead: "Do the hour.", accent: "Earn the day.", support: "No performance. Just honest preparation." },
   { lead: "ಒಂದು ದಿನ.", accent: "ಒಂದು ಗೆಲುವು.", support: "Keep stacking the days that matter." },
   { lead: "Keep calm.", accent: "ಓದು ಮುಂದುವರಿಸು.", support: "The syllabus moves when you do." },
   { lead: "ನಿಧಾನವಾಗಿ.", accent: "ನಿರಂತರವಾಗಿ.", support: "Slow is fine. Stopping is expensive." },

@@ -4,8 +4,8 @@ These are exploratory raster marks, not production-ready logos.
 
 ## Files
 
-- `odhu-indhu-emblem-concept-a.png` — open ledger, rising day, progress bars, and a small geometric Karnataka reference.
-- `odhu-indhu-emblem-concept-b.png` — reduced tally/page symbol intended to explore a stronger favicon silhouette.
+- `odhu-indhu-emblem-concept-a.png`: open ledger, rising day, progress bars, and a small geometric Karnataka reference.
+- `odhu-indhu-emblem-concept-b.png`: reduced tally/page symbol intended to explore a stronger favicon silhouette.
 
 Both are RGBA PNGs at 1254 × 1254. The product name is deliberately absent from the marks; `ODHU INDHU` should normally be a separate typographic lockup.
 
@@ -30,4 +30,3 @@ Create a refined, vector-friendly emblem with no wordmark for a Vercel-based SSC
 ### Concept B prompt
 
 Design an extremely minimal abstract streak mark with no product name: one continuous geometric symbol that reads simultaneously as an open page and five study-day tally strokes. Use a tiny stepped-diamond detail inspired by Karnataka Kasuti geometry as a subtle construction principle, not decoration. Use solid near-black and deep vermilion on a transparent background. Keep it symmetrical, flat, strict, and legible at favicon size. Avoid literal books, suns, flames, charts, graduation caps, mascots, ornate borders, shadows, bevels, textures, mockups, text, and watermarks.
-

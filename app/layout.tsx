@@ -5,7 +5,7 @@ import "./refinements.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Odhu Indhu — Study today. Recall later.",
+  title: "Odhu Indhu | Study today. Recall later.",
   description: "A focused SSC CGL study ledger.",
 };
 
