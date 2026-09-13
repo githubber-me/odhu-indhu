@@ -1,6 +1,8 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { istDate, shiftDate, streakStats, Question } from "@/lib/domain";
+import { authClient } from "@/lib/auth-client";
+import { Mark } from "@/app/mark";
 type Session = {
   id: string;
   date: string;
@@ -21,6 +23,7 @@ type SetInfo = {
 };
 type Data = {
   today: string;
+  displayName: string;
   sessions: Session[];
   sets: SetInfo[];
   attempts: { id: string; setId: string; score: number; count: number }[];
@@ -39,29 +42,20 @@ function label(d: string) {
     timeZone: "Asia/Kolkata",
   }).format(new Date(d + "T12:00:00+05:30"));
 }
-function Mark() {
-  return (
-    <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true">
-      <path d="M4 12v19l16 7 16-7V12l-16 7z" fill="currentColor" />
-      <path d="M10 5v18l7 3V8zm13 3v18l7-3V5z" fill="#a51c20" />
-      <path d="M19 21h2v12h-2z" fill="#f4f0e6" />
-    </svg>
-  );
-}
 export default function Home() {
   const [gate, setGate] = useState<"loading" | "setup" | "login" | "open">(
     "loading",
   );
   const [data, setData] = useState<Data>({
     today: istDate(),
+    displayName: "",
     sessions: [],
     sets: [],
     attempts: [],
   });
   const [tab, setTab] = useState<"today" | "history" | "quizzes">("today");
   const [content, setContent] = useState(""),
-    [duration, setDuration] = useState(60),
-    [password, setPassword] = useState("");
+    [duration, setDuration] = useState(60);
   const [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [selectedDate, setSelectedDate] = useState("");
@@ -91,7 +85,7 @@ export default function Home() {
     api("status")
       .then(async (state) => {
         if (!state.configured) setGate("setup");
-        else if (!state.authenticated) setGate("login");
+        else if (!state.authenticated) window.location.replace("/auth/sign-in");
         else {
           await reload();
           setGate("open");
@@ -128,21 +122,6 @@ export default function Home() {
   const stats = streakStats(data.sessions, data.today),
     todayEntries = data.sessions.filter((s) => s.date === data.today),
     available = data.sets.filter((s) => !s.locked && s.count > 0);
-  async function login(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setNotice("");
-    try {
-      await api("login", { password });
-      setPassword("");
-      await reload();
-      setGate("open");
-    } catch (e) {
-      setNotice((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -225,7 +204,11 @@ export default function Home() {
           <span>ODHU INDHU</span>
         </button>
         <div className="topMeta">
-          <span>VARUN’S STUDY COMPANION</span>
+          <span>
+            {gate === "open" && data.displayName
+              ? `${data.displayName.toLocaleUpperCase("en-IN")}’S STUDY COMPANION`
+              : "A PRIVATE STUDY COMPANION"}
+          </span>
           {gate === "open" && (
             <button
               className="iconButton"
@@ -263,22 +246,13 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            <form className="loginForm" onSubmit={login}>
-              <label htmlFor="password">YOUR PRIVATE PASSPHRASE</label>
-              <div>
-                <input
-                  id="password"
-                  autoComplete="current-password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button className="primaryButton" disabled={busy}>
-                  {busy ? "OPENING…" : "OPEN LEDGER ↗"}
-                </button>
-              </div>
-            </form>
+            <div className="setupCard authPrompt">
+              <p className="eyebrow">SECURE SIGN-IN</p>
+              <p>Your session has ended. Sign in to reopen your ledger.</p>
+              <a className="primaryButton" href="/auth/sign-in">
+                SIGN IN ↗
+              </a>
+            </div>
           )}
           {notice && (
             <p role="alert" className="notice">
@@ -777,15 +751,8 @@ export default function Home() {
               className="outlineButton"
               onClick={async () => {
                 try {
-                  await api("logout", {});
-                  setSettings(false);
-                  setGate("login");
-                  setData({
-                    today: istDate(),
-                    sessions: [],
-                    sets: [],
-                    attempts: [],
-                  });
+                  await authClient.signOut();
+                  window.location.assign("/auth/sign-in");
                 } catch (e) {
                   setNotice((e as Error).message);
                 }

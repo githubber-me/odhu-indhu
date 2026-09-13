@@ -107,6 +107,47 @@ h2,
   background: transparent;
   padding: 14px;
 }
+.authShell {
+  min-height: 100vh;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 42px;
+  display: grid;
+  grid-template-columns: 1fr minmax(320px, 430px);
+  grid-template-rows: auto 1fr;
+  column-gap: clamp(48px, 9vw, 140px);
+}
+.authBrand {
+  grid-column: 1 / -1;
+  height: 62px;
+  border-bottom: 1px solid var(--ink);
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  font: 600 14px "IBM Plex Mono", monospace;
+  letter-spacing: 0.13em;
+}
+.authIntro,
+.authPanel {
+  align-self: center;
+}
+.authIntro h1 {
+  font-size: clamp(52px, 6vw, 82px);
+}
+.authIntro > p:last-child {
+  margin-top: 30px;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 420px;
+}
+.authPanel > * {
+  width: 100%;
+}
+.authPrompt .primaryButton {
+  display: inline-block;
+  margin-top: 12px;
+  text-decoration: none;
+}
 .processingText {
   font-size: 11px;
   color: var(--muted);
@@ -317,6 +358,29 @@ dialog::backdrop {
   gap: 20px;
 }
 @media (max-width: 700px) {
+  .authShell {
+    padding: 19px;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+  }
+  .authBrand {
+    grid-column: 1;
+  }
+  .authIntro {
+    padding: 44px 0 28px;
+  }
+  .authIntro h1 {
+    font-size: 45px;
+  }
+  .authIntro > p:last-child {
+    display: none;
+  }
+  .authPanel {
+    align-self: start;
+  }
+  .loginForm > div {
+    flex-direction: column;
+  }
   .topMeta > span {
     display: none;
   }

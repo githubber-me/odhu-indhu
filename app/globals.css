@@ -7,6 +7,19 @@
   --muted: #6c675f;
   --line: #d8d1c5;
   --soft: #ebe5da;
+  --primary: #a51c20;
+  --primary-foreground: #f4f0e6;
+  --secondary: #ebe5da;
+  --secondary-foreground: #111111;
+  --background: #f4f0e6;
+  --foreground: #111111;
+  --muted-foreground: #6c675f;
+  --accent: #ebe5da;
+  --accent-foreground: #111111;
+  --border: #111111;
+  --input: #d8d1c5;
+  --ring: #a51c20;
+  --radius: 0.25rem;
 }
 * {
   box-sizing: border-box;

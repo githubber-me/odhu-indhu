@@ -1,20 +1,20 @@
 # Odhu Indhu
 
-Varun’s private SSC CGL companion. Next.js on Vercel, PostgreSQL persistence, passphrase authentication, immutable study entries, IST streaks, and topic quizzes with delayed access.
+Varun’s private SSC CGL companion. Next.js on Vercel, Neon Postgres and Neon Auth, immutable study entries, IST streaks, and delayed topic quizzes.
 
 ## One-time setup
 
-1. Create a Neon Postgres database, either in the [Neon console](https://console.neon.tech) or Vercel → Storage → Create Database → Neon. Pick a region close to the Vercel application region. Copy the pooled connection string with its SSL parameters into `.env.local` as `DATABASE_URL`. Keep the credentials private; do not paste them into chat.
-2. Run `npm run auth:setup` in your terminal. Choose a passphrase of at least 12 characters. The command hides input and prints a bcrypt hash, `AUTH_SECRET`, and `CRON_SECRET`. Follow its separate instructions for `.env.local` versus Vercel: Next.js dotenv expands dollar signs, so the local bcrypt hash must escape them. The passphrase itself is never saved.
-3. Keep `SARVAM_API_KEY` and `PARALLEL_API_KEY` in `.env.local`. `SARVAM_MODEL` defaults to `sarvam-105b` on the standard v1 endpoint, which passed a live JSON check with the configured key. GLM-5.2 on v2 was rejected because this key lacks beta access; set `SARVAM_MODEL=glm5.2` only after enabling that access. No provider credentials are sent to the client.
-4. Run `npm run db:migrate`. This creates the application tables and the database rule preventing edits to sealed entries. Running it again is safe. Use a dedicated application database.
-5. Run `npm run dev` and open [localhost:3000](http://localhost:3000). Sign in with your passphrase.
+1. Create a Neon Postgres database with Auth enabled through the Vercel integration. Use a region close to the application, expose it as `DATABASE_URL`, and copy `DATABASE_URL` plus `NEON_AUTH_BASE_URL` into `.env.local`. Keep their values private.
+2. Generate `CRON_SECRET` with `openssl rand -hex 32`, keep it in `.env.local`, and add the same value to Vercel. The application derives a domain-separated Neon Auth cookie-signing key from it. You may instead set a dedicated `NEON_AUTH_COOKIE_SECRET` of at least 32 characters.
+3. Keep `SARVAM_API_KEY` and `PARALLEL_API_KEY` in `.env.local`. `SARVAM_MODEL` defaults to `sarvam-105b`; set `SARVAM_MODEL=glm5.2` only after enabling Sarvam beta access.
+4. Run `npm run db:migrate`. The repeatable migration creates the application tables and prevents edits to sealed study entries.
+5. In Neon Auth, enable Google and Magic Link and leave email/password credentials disabled. Run `npm run dev`, open [localhost:3000](http://localhost:3000), and sign in with either option.
 
-The app stays closed if the database URL, valid password hash, or signing secret is absent. It does not fall back to browser storage or an unauthenticated mode. Earlier browser entries are left untouched, and Settings can download them as JSON; they are not silently imported as backdated streak credit.
+The app stays closed if database, Neon Auth, or cookie-signing configuration is absent. It never falls back to an unauthenticated mode.
 
 ## Vercel deployment
 
-Import this repository into Vercel as a Next.js project. Set `DATABASE_URL`, `APP_PASSWORD_HASH`, `AUTH_SECRET`, `CRON_SECRET`, `SARVAM_API_KEY`, `PARALLEL_API_KEY`, and optionally `SARVAM_MODEL` in the project's environment settings, then deploy. Set the production runtime region near the database. Use a separate database for previews.
+Set `DATABASE_URL`, `NEON_AUTH_BASE_URL`, `CRON_SECRET`, `SARVAM_API_KEY`, `PARALLEL_API_KEY`, and optionally `SARVAM_MODEL` in Vercel. Neon’s integration supplies branch-specific database and Auth URLs for previews. Run the migration against production before signing in, configure the allowed domains, and enable only Google and Magic Link in Neon Auth.
 
 `vercel.json` includes a daily recovery sweep compatible with Hobby. Submission and the authenticated app also trigger background processing. Each worker invocation handles one topic with a database lease; additional topics progress while the app is open or through the recovery sweep. With many topics and the browser closed, preparation can take longer than the unlock date. For guaranteed high-volume readiness, use a more frequent authenticated cron on Vercel Pro or a durable queue before opening public registration. The unlock date itself never depends on cron timing.
 
@@ -23,7 +23,8 @@ Import this repository into Vercel as a Next.js project. Set `DATABASE_URL`, `AP
 - Durations are validated server-side; the server assigns the IST study date.
 - Multiple sessions totaling 60 minutes qualify a day. Streaks do not depend on AI success.
 - Sessions are idempotent and immutable in PostgreSQL.
-- Login uses bcrypt, opaque HTTP-only sessions persisted as HMAC hashes, server-side expiration/revocation, and shared database rate limits.
+- Every study session, topic set, and quiz attempt carries a stable internal user ID. The first authenticated Neon user claims the seeded `varun` record, preserving any pre-authentication history; later users receive isolated accounts.
+- Neon Auth owns Google OAuth, passwordless Magic Link, session cookies, and email delivery. Password credentials are disabled. The application stores only the Neon subject-to-internal-user mapping needed for its own data.
 - AI routes require login and origin checks. Cron requires its own bearer secret.
 - Topics are extracted privately; Parallel supplies evidence, Sarvam generates MCQs and independently critiques correctness and ambiguity. Accepted questions accumulate toward ten per topic. Partial results retain only accepted questions.
 - Quiz questions remain on the server until their IST unlock date. Answers and explanations are omitted until submission, which freezes the answer set transactionally.
@@ -46,15 +47,16 @@ Unit tests cover IST boundaries, streak gaps, unlock dates, request validation, 
 
 The browser configuration uses the installed macOS Chrome executable. Set a different executable or install Playwright Chromium when running on another machine.
 
-Current connection status: Sarvam standard JSON output and Parallel search passed small live checks without exposing keys. `DATABASE_URL`, `APP_PASSWORD_HASH`, and `AUTH_SECRET` were absent. Live login/database and complete question generation must be smoke-tested after setup. No cloud database was provisioned or application deployed by this change. Recheck providers with `node scripts/check-providers.mjs` (two small billable requests).
+Sarvam standard JSON output and Parallel search passed small live checks without exposing keys. Recheck providers with `node scripts/check-providers.mjs` (two small billable requests).
 
 ## Implementation map
 
 - `lib/domain.ts`: dates, streaks, validation, answer projection, CSV serialization.
 - `lib/db.ts`, `db/001_initial.sql`: database connection and repeatable migration.
-- `lib/auth.ts`: cookie sessions, revocation, origin and rate-limit checks.
+- `lib/auth.ts`: Neon Auth, internal user mapping, origin checks, rate limits, and cron authorization.
 - `lib/pipeline.ts`: bounded topic generation and critique with persistent retries.
 - `app/api/[...path]/route.ts`: protected API and export endpoints.
-- `app/page.tsx`: ledger, login, history, quiz and review screens.
+- `app/auth/[path]/page.tsx`: Neon Auth’s Google and passwordless Magic Link screens.
+- `app/page.tsx`: ledger, history, quiz, and review screens.
 
 The earlier `docs/IMPLEMENTATION_PLAN.md` is design history. This README and the implemented code describe the current architecture; direct parameterized SQL replaces the planned ORM for this small private application. Weekly random blasts are a future feature supported by the stored question/attempt records, not currently exposed in the UI.

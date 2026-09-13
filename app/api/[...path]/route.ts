@@ -1,14 +1,9 @@
 import { NextResponse, after } from "next/server";
-import { compare } from "bcryptjs";
-import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, configured } from "@/lib/db";
 import {
   authenticated,
-  createSession,
-  cookieName,
-  hash,
   rateLimit,
   sameOrigin,
   cronAuthorized,
@@ -32,11 +27,18 @@ async function handler(request: Request) {
   try {
     if (method === "POST" && !sameOrigin(request))
       return json({ error: "Request origin rejected." }, 403);
-    if (path === "status")
-      return json({
-        configured: configured(),
-        authenticated: configured() ? await authenticated() : false,
-      });
+    if (path === "status") {
+      if (!configured())
+        return json({ configured: false, authenticated: false });
+      try {
+        return json({
+          configured: true,
+          authenticated: Boolean(await authenticated()),
+        });
+      } catch {
+        return json({ configured: false, authenticated: false });
+      }
+    }
     if (!configured())
       return json(
         { error: "Private access is being set up. Please return shortly." },
@@ -47,42 +49,22 @@ async function handler(request: Request) {
       if (!cronAuthorized(request)) return json({ error: "Unauthorized" }, 401);
       await drainWork();
       await sql`DELETE FROM rate_limits WHERE expires_at<now()`;
-      await sql`DELETE FROM auth_sessions WHERE expires_at<now()`;
       return json({ ok: true });
     }
-    if (path === "login" && method === "POST") {
-      if (!(await rateLimit("login-global", 10, 900)))
-        return json(
-          { error: "Too many attempts. Try again in 15 minutes." },
-          429,
-        );
-      const { password } = z
-        .object({ password: z.string().min(1).max(72) })
-        .parse(await request.json());
-      if (!(await compare(password, process.env.APP_PASSWORD_HASH!)))
-        return json({ error: "That passphrase did not match." }, 401);
-      await createSession();
-      return json({ ok: true });
-    }
-    if (!(await authenticated()))
-      return json({ error: "Please sign in again." }, 401);
-    if (path === "logout" && method === "POST") {
-      const jar = await cookies();
-      const token = jar.get(cookieName)?.value;
-      if (token)
-        await sql`DELETE FROM auth_sessions WHERE token_hash=${hash(token)}`;
-      jar.delete(cookieName);
-      return json({ ok: true });
-    }
+    const userId = await authenticated();
+    if (!userId) return json({ error: "Please sign in again." }, 401);
     if (path === "data" && method === "GET") {
+      const profiles =
+        await sql`SELECT display_name FROM app_users WHERE id=${userId}`;
       const sessions =
-        await sql`SELECT id,date,duration,content,submitted_at AS "submittedAt",status FROM study_sessions ORDER BY submitted_at DESC`;
+        await sql`SELECT id,date,duration,content,submitted_at AS "submittedAt",status FROM study_sessions WHERE user_id=${userId} ORDER BY submitted_at DESC`;
       const sets =
-        await sql`SELECT id,topic,subject,study_date AS "studyDate",available_on AS "availableOn",jsonb_array_length(questions) AS count,status FROM topic_sets ORDER BY study_date DESC`;
+        await sql`SELECT id,topic,subject,study_date AS "studyDate",available_on AS "availableOn",jsonb_array_length(questions) AS count,status FROM topic_sets WHERE user_id=${userId} ORDER BY study_date DESC`;
       const attempts =
-        await sql`SELECT id,set_id AS "setId",score,jsonb_array_length(questions) AS count,submitted_at AS "submittedAt" FROM quiz_attempts WHERE submitted_at IS NOT NULL ORDER BY submitted_at DESC`;
+        await sql`SELECT id,set_id AS "setId",score,jsonb_array_length(questions) AS count,submitted_at AS "submittedAt" FROM quiz_attempts WHERE user_id=${userId} AND submitted_at IS NOT NULL ORDER BY submitted_at DESC`;
       return json({
         today: istDate(),
+        displayName: profiles[0]?.display_name || "Student",
         sessions,
         sets: sets.map((s) => ({
           ...s,
@@ -95,11 +77,11 @@ async function handler(request: Request) {
     }
     if (path === "entries" && method === "POST") {
       const body = entrySchema.parse(await request.json());
-      if (!(await rateLimit("entries", 30, 3600)))
+      if (!(await rateLimit("entries:" + userId, 30, 3600)))
         return json({ error: "Please wait before adding more sessions." }, 429);
-      await sql`INSERT INTO study_sessions(id,content,duration,date) VALUES(${body.id},${body.content},${body.duration},${istDate()}) ON CONFLICT(id) DO NOTHING`;
+      await sql`INSERT INTO study_sessions(id,user_id,content,duration,date) VALUES(${body.id},${userId},${body.content},${body.duration},${istDate()}) ON CONFLICT(id) DO NOTHING`;
       const saved =
-        await sql`SELECT content,duration FROM study_sessions WHERE id=${body.id}`;
+        await sql`SELECT content,duration FROM study_sessions WHERE id=${body.id} AND user_id=${userId}`;
       if (
         saved[0].content !== body.content ||
         saved[0].duration !== body.duration
@@ -112,32 +94,33 @@ async function handler(request: Request) {
       return json({ ok: true });
     }
     if (path === "retry" && method === "POST") {
-      if (!(await rateLimit("retry", 12, 3600)))
+      if (!(await rateLimit("retry:" + userId, 12, 3600)))
         return json({ error: "Please allow processing to finish." }, 429);
       const { id } = z
         .object({ id: z.string().uuid() })
         .parse(await request.json());
-      await sql`UPDATE study_sessions SET status='queued',attempts=0,failures=0,leased_until=NULL WHERE id=${id} AND status='failed'`;
+      await sql`UPDATE study_sessions SET status='queued',attempts=0,failures=0,leased_until=NULL WHERE id=${id} AND user_id=${userId} AND status='failed'`;
       after(() => drainWork(id));
       return json({ ok: true });
     }
     if (path === "work" && method === "POST") {
-      if (await rateLimit("work", 1, 20)) after(() => drainWork());
+      if (await rateLimit("work:" + userId, 1, 20))
+        after(() => drainWork(undefined, userId));
       return json({ ok: true });
     }
     if (path === "quiz/start" && method === "POST") {
       const { id } = z
         .object({ id: z.string().uuid() })
         .parse(await request.json());
-      if (!(await rateLimit("quiz-start", 60, 3600)))
+      if (!(await rateLimit("quiz-start:" + userId, 60, 3600)))
         return json({ error: "Too many quiz starts." }, 429);
       const sets =
-        await sql`SELECT * FROM topic_sets WHERE id=${id} AND available_on<=${istDate()} AND jsonb_array_length(questions)>0`;
+        await sql`SELECT * FROM topic_sets WHERE id=${id} AND user_id=${userId} AND available_on<=${istDate()} AND jsonb_array_length(questions)>0`;
       if (!sets.length)
         return json({ error: "This quiz is not available yet." }, 404);
       const attemptId = randomUUID(),
         set = sets[0];
-      await sql`INSERT INTO quiz_attempts(id,set_id,questions) VALUES(${attemptId},${id},${sql.json(set.questions)})`;
+      await sql`INSERT INTO quiz_attempts(id,user_id,set_id,questions) VALUES(${attemptId},${userId},${id},${sql.json(set.questions)})`;
       return json({
         id: attemptId,
         topic: set.topic,
@@ -153,7 +136,7 @@ async function handler(request: Request) {
         .parse(await request.json());
       const result = await sql.begin(async (tx) => {
         const rows =
-          await tx`SELECT * FROM quiz_attempts WHERE id=${id} FOR UPDATE`;
+          await tx`SELECT * FROM quiz_attempts WHERE id=${id} AND user_id=${userId} FOR UPDATE`;
         if (!rows.length) throw new Error("NOT_FOUND");
         const attempt = rows[0],
           questions: Question[] = attempt.questions;
@@ -174,16 +157,17 @@ async function handler(request: Request) {
       const type = path.slice(8);
       let rows;
       if (type === "raw")
-        rows = await sql`SELECT * FROM study_sessions ORDER BY submitted_at`;
+        rows =
+          await sql`SELECT * FROM study_sessions WHERE user_id=${userId} ORDER BY submitted_at`;
       else if (type === "topics")
         rows =
-          await sql`SELECT id,session_id,study_date,topic,subject,available_on,status FROM topic_sets ORDER BY created_at`;
+          await sql`SELECT id,session_id,study_date,topic,subject,available_on,status FROM topic_sets WHERE user_id=${userId} ORDER BY created_at`;
       else if (type === "questions")
         rows =
-          await sql`SELECT topic,study_date,questions,evidence FROM topic_sets WHERE available_on<=${istDate()} AND EXISTS(SELECT 1 FROM quiz_attempts WHERE set_id=topic_sets.id AND submitted_at IS NOT NULL)`;
+          await sql`SELECT topic,study_date,questions,evidence FROM topic_sets WHERE user_id=${userId} AND available_on<=${istDate()} AND EXISTS(SELECT 1 FROM quiz_attempts WHERE set_id=topic_sets.id AND user_id=${userId} AND submitted_at IS NOT NULL)`;
       else if (type === "attempts")
         rows =
-          await sql`SELECT id,set_id,answers,score,submitted_at FROM quiz_attempts WHERE submitted_at IS NOT NULL`;
+          await sql`SELECT id,set_id,answers,score,submitted_at FROM quiz_attempts WHERE user_id=${userId} AND submitted_at IS NOT NULL`;
       else return json({ error: "Unknown export" }, 404);
       return new Response(csv(rows), {
         headers: {

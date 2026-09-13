@@ -9,11 +9,11 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
-    "db:migrate": "node scripts/migrate.mjs",
-    "auth:setup": "node scripts/auth-setup.mjs"
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
+    "@neondatabase/auth": "0.5.0-beta",
+    "@neondatabase/auth-ui": "0.3.0-beta",
     "next": "^16.3.5",
     "postgres": "^3.4.9",
     "react": "^19.1.0",

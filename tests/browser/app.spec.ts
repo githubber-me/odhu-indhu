@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
 const id = "550e8400-e29b-41d4-a716-446655440000";
+test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
+  await page.goto("/auth/sign-in");
+  await expect(page.getByText("Sign In", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /email/i })).toBeVisible();
+  await expect(page.locator('input[type="password"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /google/i })).toBeVisible();
+  await page.screenshot({ path: "test-results/auth.png", fullPage: true });
+});
 test("unconfigured app keeps writes closed and presents a calm setup screen", async ({
   page,
   request,
@@ -17,6 +25,7 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
 }) => {
   const data = {
     today: "2026-09-13",
+    displayName: "Varun",
     sessions: [
       {
         id,

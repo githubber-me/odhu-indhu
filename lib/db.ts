@@ -11,10 +11,11 @@ export function db() {
   }));
 }
 export function configured() {
+  const cookieSecret =
+    process.env.NEON_AUTH_COOKIE_SECRET || process.env.CRON_SECRET || "";
   return Boolean(
     process.env.DATABASE_URL &&
-    /^\$2[aby]\$\d{2}\$.{53}$/.test(process.env.APP_PASSWORD_HASH || "") &&
-    process.env.AUTH_SECRET &&
-    process.env.AUTH_SECRET.length >= 32,
+    process.env.NEON_AUTH_BASE_URL &&
+    cookieSecret.length >= 32,
   );
 }

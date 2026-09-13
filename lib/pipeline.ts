@@ -89,12 +89,12 @@ async function search(topic: string) {
     }));
 }
 // Each invocation does one topic. The database lease and stored accepted questions survive retries.
-export async function processNext(sessionId?: string) {
+export async function processNext(sessionId?: string, userId?: string) {
   if (!process.env.SARVAM_API_KEY || !process.env.PARALLEL_API_KEY)
     return false;
   const sql = db();
   const rows =
-    await sql`UPDATE study_sessions SET status='processing', leased_until=now()+interval '5 minutes', attempts=attempts+1 WHERE id=(SELECT id FROM study_sessions WHERE status IN ('queued','processing','partial') AND attempts<80 AND (leased_until IS NULL OR leased_until<now()) AND (${sessionId ?? null}::uuid IS NULL OR id=${sessionId ?? null}::uuid) ORDER BY submitted_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`;
+    await sql`UPDATE study_sessions SET status='processing', leased_until=now()+interval '5 minutes', attempts=attempts+1 WHERE id=(SELECT id FROM study_sessions WHERE status IN ('queued','processing','partial') AND attempts<80 AND (leased_until IS NULL OR leased_until<now()) AND (${sessionId ?? null}::uuid IS NULL OR id=${sessionId ?? null}::uuid) AND (${userId ?? null}::uuid IS NULL OR user_id=${userId ?? null}::uuid) ORDER BY submitted_at FOR UPDATE SKIP LOCKED LIMIT 1) RETURNING *`;
   if (!rows.length) return false;
   const session = rows[0];
   try {
@@ -115,7 +115,7 @@ export async function processNext(sessionId?: string) {
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, " ")
             .trim();
-        await sql`INSERT INTO topic_sets(id,session_id,study_date,topic,subject,normalized_key,available_on) VALUES(${randomUUID()},${session.id},${session.date},${t.topic},${t.subject},${key},${shiftDate(session.date, 2)}) ON CONFLICT(study_date,normalized_key) DO NOTHING`;
+        await sql`INSERT INTO topic_sets(id,user_id,session_id,study_date,topic,subject,normalized_key,available_on) VALUES(${randomUUID()},${session.user_id},${session.id},${session.date},${t.topic},${t.subject},${key},${shiftDate(session.date, 2)}) ON CONFLICT(user_id,study_date,normalized_key) DO NOTHING`;
       }
       sets = await sql`SELECT * FROM topic_sets WHERE session_id=${session.id}`;
       if (!sets.length) {
@@ -196,9 +196,9 @@ export async function processNext(sessionId?: string) {
 }
 
 // Leave 225 seconds for the worst-case in-flight topic (three model requests + search).
-export async function drainWork(firstId?: string) {
+export async function drainWork(firstId?: string, userId?: string) {
   const started = Date.now();
   for (let i = 0; i < 20 && Date.now() - started < 40000; i++) {
-    if (!(await processNext(i === 0 ? firstId : undefined))) break;
+    if (!(await processNext(i === 0 ? firstId : undefined, userId))) break;
   }
 }
