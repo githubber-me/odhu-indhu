@@ -26,12 +26,15 @@ import {
 } from "@/lib/weekly";
 import { startOfIstWeek } from "@/lib/weekly-domain";
 import { weeklyPdf } from "@/lib/weekly-pdf";
+import { recordEvent } from "@/lib/observability";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
-async function handler(request: Request) {
+type RequestObservation = { userId: string | null; exceptionLogged: boolean };
+
+async function handler(request: Request, observation: RequestObservation) {
   const path = new URL(request.url).pathname.slice(5),
     method = request.method;
   try {
@@ -68,8 +71,41 @@ async function handler(request: Request) {
       await drainWeeklyWork();
       return json({ ok: true });
     }
-    const userId = await authenticated();
+    const userId = (observation.userId = await authenticated());
     if (!userId) return json({ error: "Please sign in again." }, 401);
+    if (path === "client-event" && method === "POST") {
+      if (!(await rateLimit("client-event:" + userId, 180, 3600)))
+        return json({ error: "Too many diagnostic events." }, 429);
+      const event = z
+        .object({
+          eventType: z.string().trim().min(1).max(120),
+          message: z.string().trim().min(1).max(500),
+          errorCode: z.string().trim().max(160).optional(),
+          metadata: z
+            .record(
+              z.string().trim().min(1).max(80),
+              z.union([
+                z.string().max(2_000),
+                z.number().finite(),
+                z.boolean(),
+                z.null(),
+              ]),
+            )
+            .optional(),
+        })
+        .parse(await request.json());
+      await recordEvent({
+        level: "error",
+        category: "client",
+        eventType: event.eventType,
+        outcome: "error",
+        userId,
+        message: event.message,
+        errorCode: event.errorCode,
+        metadata: event.metadata,
+      });
+      return json({ ok: true }, 202);
+    }
     if (path === "data" && method === "GET") {
       const profiles =
         await sql`SELECT display_name,email FROM app_users WHERE id=${userId}`;
@@ -342,6 +378,24 @@ async function handler(request: Request) {
     }
     return json({ error: "Not found" }, 404);
   } catch (error) {
+    observation.exceptionLogged = true;
+    await recordEvent({
+      level: "error",
+      category: categoryFor(path),
+      eventType: "api.request.exception",
+      outcome: "error",
+      userId: observation.userId,
+      message: error instanceof Error ? error.message : "Unhandled API exception",
+      errorCode: error instanceof Error ? error.name : "API_EXCEPTION",
+      metadata: {
+        path,
+        method,
+        stack:
+          error instanceof Error && error.stack
+            ? error.stack.slice(0, 2_000)
+            : undefined,
+      },
+    });
     if (error instanceof z.ZodError || error instanceof SyntaxError)
       return json({ error: "Please check the submitted values." }, 400);
     return json(
@@ -353,4 +407,66 @@ async function handler(request: Request) {
     );
   }
 }
-export { handler as GET, handler as POST };
+
+const successMessages: Record<string, string> = {
+  profile: "Learner profile updated",
+  "weekly/upload": "Private voice upload authorised",
+  "weekly/complete": "Private voice upload verified",
+  "weekly/report": "Weekly PDF report served",
+  "weekly/voice": "Private voice note served",
+  entries: "Study entry accepted",
+  retry: "Study processing retry requested",
+  "quiz/start": "Quiz attempt opened",
+  "quiz/submit": "Quiz attempt response accepted",
+};
+
+function categoryFor(path: string) {
+  if (path.startsWith("weekly/upload") || path.startsWith("weekly/voice"))
+    return "storage" as const;
+  return "api" as const;
+}
+
+async function observedHandler(request: Request) {
+  const observation: RequestObservation = { userId: null, exceptionLogged: false };
+  const path = new URL(request.url).pathname.slice(5);
+  const method = request.method;
+  const response = await handler(request, observation);
+  const successMessage =
+    successMessages[path] ||
+    (path.startsWith("exports/") ? "Learner data export served" : null);
+
+  if (response.status >= 400 && !observation.exceptionLogged) {
+    const payload = await response
+      .clone()
+      .json()
+      .catch(() => null) as { error?: unknown } | null;
+    const message =
+      typeof payload?.error === "string"
+        ? payload.error
+        : `Request failed with HTTP ${response.status}`;
+    await recordEvent({
+      level: "error",
+      category: categoryFor(path),
+      eventType: "api.request.failed",
+      outcome: "error",
+      userId: observation.userId,
+      message,
+      errorCode: `HTTP_${response.status}`,
+      metadata: { path, method, status: response.status },
+    });
+  } else if (successMessage) {
+    await recordEvent({
+      level: "info",
+      category: categoryFor(path),
+      eventType: "api.request.succeeded",
+      outcome: "success",
+      userId: observation.userId,
+      message: successMessage,
+      metadata: { path, method, status: response.status },
+    });
+  }
+
+  return response;
+}
+
+export { observedHandler as GET, observedHandler as POST };

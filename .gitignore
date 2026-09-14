@@ -8,3 +8,7 @@ out/
 playwright-report/
 test-results/
 *.tsbuildinfo
+
+# Local weekly report mockups and rendered PDF previews
+/output/pdf/odhu-indhu-mock-weekly-report.pdf
+/tmp/pdfs/

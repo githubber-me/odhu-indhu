@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { questionSchema, Question, shiftDate } from "./domain";
+import { recordEvent } from "./observability";
 const topicsSchema = z.object({
   topics: z
     .array(
@@ -248,6 +249,26 @@ export async function processNext(sessionId?: string, userId?: string) {
       )
         ? error.message
         : "PROCESSING_FAILED";
+    await recordEvent({
+      level: "error",
+      category: "study",
+      eventType: "study.processing.attempt_failed",
+      outcome: "error",
+      userId: String(session.user_id),
+      entityType: "study_session",
+      entityId: String(session.id),
+      message: error instanceof Error ? error.message : "Study processing failed",
+      errorCode: code,
+      metadata: {
+        attempt: Number(session.attempts),
+        failures: Number(session.failures) + 1,
+        status: String(session.status),
+        stack:
+          error instanceof Error && error.stack
+            ? error.stack.slice(0, 2_000)
+            : undefined,
+      },
+    });
     await sql`UPDATE study_sessions SET status=${session.failures >= 5 || session.attempts >= 80 ? "failed" : "partial"},failures=failures+1,leased_until=now()+interval '5 minutes',error_code=${code} WHERE id=${session.id}`;
   }
   return true;

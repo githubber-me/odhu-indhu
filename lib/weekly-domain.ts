@@ -48,6 +48,19 @@ export function weekLabel(weekStart: string) {
   return `${format(weekStart)} to ${format(end)}`;
 }
 
+export function completedStudyDays(
+  sessions: { date: string; duration: number }[],
+  weekStart: string,
+) {
+  const weekEnd = shiftDate(weekStart, 6);
+  const totals = new Map<string, number>();
+  for (const session of sessions) {
+    if (session.date < weekStart || session.date > weekEnd) continue;
+    totals.set(session.date, (totals.get(session.date) || 0) + session.duration);
+  }
+  return [...totals.values()].filter((minutes) => minutes >= 60).length;
+}
+
 const stopWords = new Set([
   "and",
   "the",

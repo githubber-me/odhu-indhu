@@ -8,7 +8,9 @@ import { SarvamAIClient } from "sarvamai";
 import { z } from "zod";
 import { db } from "./db";
 import { istDate, shiftDate } from "./domain";
+import { recordEvent } from "./observability";
 import {
+  completedStudyDays,
   goalEvidence,
   startOfIstWeek,
   WeeklyGoal,
@@ -181,6 +183,27 @@ export async function drainWeeklyWork(userId?: string) {
     else await finishTranscription(note);
   } catch (error) {
     const code = error instanceof Error ? error.message.slice(0, 80) : "UNKNOWN";
+    await recordEvent({
+      level: "error",
+      category: "voice",
+      eventType: "voice.transcription.attempt_failed",
+      outcome: "error",
+      userId: String(note.user_id),
+      entityType: "voice_note",
+      entityId: String(note.id),
+      message: error instanceof Error ? error.message : "Speech-to-text processing failed",
+      errorCode: code,
+      metadata: {
+        attempt: Number(note.attempts),
+        kind: String(note.kind),
+        status: String(note.status),
+        weekStart: String(note.week_start),
+        stack:
+          error instanceof Error && error.stack
+            ? error.stack.slice(0, 2_000)
+            : undefined,
+      },
+    });
     await sql`UPDATE weekly_voice_notes SET leased_until=now()+interval '5 minutes',error_code=${code},status=CASE WHEN attempts>=10 THEN 'failed' ELSE status END WHERE id=${note.id}`;
   }
   return true;
@@ -293,8 +316,30 @@ export async function generateEligibleReports(userId?: string) {
       WHERE r.user_id=n.user_id AND r.week_start=n.week_start
     ) ORDER BY n.week_start LIMIT 8`;
   for (const row of reflections) {
-    const metrics = await buildReport(row.user_id, row.week_start);
-    await sql`INSERT INTO weekly_reports(id,user_id,week_start,metrics) VALUES(${randomUUID()},${row.user_id},${row.week_start},${sql.json(metrics)}) ON CONFLICT(user_id,week_start) DO NOTHING`;
+    try {
+      const metrics = await buildReport(row.user_id, row.week_start);
+      await sql`INSERT INTO weekly_reports(id,user_id,week_start,metrics) VALUES(${randomUUID()},${row.user_id},${row.week_start},${sql.json(metrics)}) ON CONFLICT(user_id,week_start) DO NOTHING`;
+    } catch (error) {
+      await recordEvent({
+        level: "error",
+        category: "report",
+        eventType: "weekly.report.generation_failed",
+        outcome: "error",
+        userId: String(row.user_id),
+        entityType: "weekly_report",
+        entityId: String(row.week_start),
+        message: error instanceof Error ? error.message : "Weekly report generation failed",
+        errorCode: error instanceof Error ? error.name : "REPORT_EXCEPTION",
+        metadata: {
+          weekStart: String(row.week_start),
+          stack:
+            error instanceof Error && error.stack
+              ? error.stack.slice(0, 2_000)
+              : undefined,
+        },
+      });
+      throw error;
+    }
   }
 }
 
@@ -318,8 +363,19 @@ export async function weeklyDashboard(userId: string, today = istDate()) {
     ? currentWeekStart
     : shiftDate(currentWeekStart, -7);
   const pendingSummaries: string[] = [];
+  const recentSessions = await sql`
+    SELECT date,duration FROM study_sessions
+    WHERE user_id=${userId} AND date>=${shiftDate(currentWeekStart, -56)}`;
+  const recentSessionValues = recentSessions.map((session) => ({
+    date: String(session.date),
+    duration: Number(session.duration),
+  }));
   for (let cursor = summaryWeek, count = 0; cursor >= firstWeek && count < 8; cursor = shiftDate(cursor, -7), count++) {
-    if (!has(cursor, "reflection")) pendingSummaries.push(cursor);
+    if (
+      !has(cursor, "reflection") &&
+      completedStudyDays(recentSessionValues, cursor) >= 2
+    )
+      pendingSummaries.push(cursor);
   }
   return {
     storageReady: Boolean(process.env.BLOB_READ_WRITE_TOKEN),

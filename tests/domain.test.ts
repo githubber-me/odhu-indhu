@@ -10,7 +10,11 @@ import {
   questionSchema,
 } from "../lib/domain";
 import { DAILY_HEROES, dailyHero } from "../lib/daily-hero";
-import { goalEvidence, startOfIstWeek } from "../lib/weekly-domain";
+import {
+  completedStudyDays,
+  goalEvidence,
+  startOfIstWeek,
+} from "../lib/weekly-domain";
 test("IST midnight is authoritative regardless of machine timezone", () => {
   assert.equal(istDate(new Date("2026-09-13T18:29:59Z")), "2026-09-13");
   assert.equal(istDate(new Date("2026-09-13T18:30:00Z")), "2026-09-14");
@@ -39,6 +43,17 @@ test("weekly rituals use Monday through Sunday IST calendar weeks", () => {
   assert.equal(startOfIstWeek("2026-09-20"), "2026-09-14");
   assert.equal(startOfIstWeek("2026-09-21"), "2026-09-21");
   assert.equal(startOfIstWeek("2027-01-01"), "2026-12-28");
+});
+test("weekly reflection opens only after two completed study days", () => {
+  const sessions = [
+    { date: "2026-09-14", duration: 30 },
+    { date: "2026-09-14", duration: 30 },
+    { date: "2026-09-15", duration: 59 },
+    { date: "2026-09-20", duration: 60 },
+    { date: "2026-09-21", duration: 90 },
+  ];
+  assert.equal(completedStudyDays(sessions, "2026-09-14"), 2);
+  assert.equal(completedStudyDays(sessions, "2026-09-21"), 1);
 });
 test("weekly goal comparison is deterministic and evidence based", () => {
   const actual = [

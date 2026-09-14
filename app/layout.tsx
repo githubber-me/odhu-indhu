@@ -3,6 +3,7 @@ import "@neondatabase/auth-ui/css";
 import "./globals.css";
 import "./refinements.css";
 import { Providers } from "./providers";
+import { ClientTelemetry } from "./client-telemetry";
 
 const deploymentHost =
   process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
@@ -77,7 +78,10 @@ export default function RootLayout({
             }).replace(/</g, "\\u003c"),
           }}
         />
-        <Providers>{children}</Providers>
+        <Providers>
+          <ClientTelemetry />
+          {children}
+        </Providers>
       </body>
     </html>
   );

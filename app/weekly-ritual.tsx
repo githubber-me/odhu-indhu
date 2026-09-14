@@ -3,6 +3,7 @@
 import { upload } from "@vercel/blob/client";
 import { useEffect, useRef, useState } from "react";
 import { weekLabel } from "@/lib/weekly-domain";
+import { reportClientIssue } from "@/lib/client-observability";
 
 export type WeeklyState = {
   storageReady: boolean;
@@ -95,7 +96,13 @@ function VoiceTask({
       recorder.current = next;
       next.start(1000);
       setRecording(true);
-    } catch {
+    } catch (error) {
+      reportClientIssue({
+        eventType: "voice.microphone.unavailable",
+        message: "Microphone access was not available",
+        errorCode: error instanceof Error ? error.name : "MEDIA_ERROR",
+        metadata: { kind, weekStart },
+      });
       onNotice("Microphone access was not available. You can upload an existing voice note instead.");
     }
   }
@@ -103,6 +110,12 @@ function VoiceTask({
   async function send() {
     if (!file) return;
     if (file.size > 25 * 1024 * 1024) {
+      reportClientIssue({
+        eventType: "voice.upload.rejected",
+        message: "Selected voice note exceeded the 25 MB limit",
+        errorCode: "FILE_TOO_LARGE",
+        metadata: { kind, weekStart, sizeBytes: file.size },
+      });
       onNotice("Please choose a voice note smaller than 25 MB.");
       return;
     }
@@ -110,6 +123,7 @@ function VoiceTask({
     setProgress(0);
     const noteId = crypto.randomUUID();
     const payload = JSON.stringify({ noteId, weekStart, kind });
+    let stage = "blob_upload";
     try {
       const blob = await upload(
         `weekly/${noteId}/${kind}-${weekStart}.${extension(file.type)}`,
@@ -121,6 +135,7 @@ function VoiceTask({
           onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
         },
       );
+      stage = "upload_verification";
       const response = await fetch("/api/weekly/complete", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -138,6 +153,12 @@ function VoiceTask({
       onNotice("Voice note sealed for the week.");
       await onChanged();
     } catch (error) {
+      reportClientIssue({
+        eventType: "voice.upload.failed",
+        message: "Voice note upload failed",
+        errorCode: error instanceof Error ? error.name : "UPLOAD_ERROR",
+        metadata: { kind, weekStart, stage },
+      });
       onNotice(error instanceof Error ? error.message : "Voice note upload failed. Please try again.");
     } finally {
       setBusy(false);
