@@ -78,7 +78,9 @@ async function handler(request: Request, observation: RequestObservation) {
         return json({ error: "Too many diagnostic events." }, 429);
       const event = z
         .object({
+          level: z.enum(["info", "warn", "error"]).optional(),
           eventType: z.string().trim().min(1).max(120),
+          outcome: z.string().trim().min(1).max(40).optional(),
           message: z.string().trim().min(1).max(500),
           errorCode: z.string().trim().max(160).optional(),
           metadata: z
@@ -95,10 +97,10 @@ async function handler(request: Request, observation: RequestObservation) {
         })
         .parse(await request.json());
       await recordEvent({
-        level: "error",
+        level: event.level ?? "error",
         category: "client",
         eventType: event.eventType,
-        outcome: "error",
+        outcome: event.outcome ?? (event.level === "info" ? "success" : "error"),
         userId,
         message: event.message,
         errorCode: event.errorCode,
@@ -409,13 +411,17 @@ async function handler(request: Request, observation: RequestObservation) {
 }
 
 const successMessages: Record<string, string> = {
+  data: "Learner dashboard loaded",
   profile: "Learner profile updated",
+  cron: "Background processing cycle completed",
+  "weekly/cron": "Weekly processing cycle completed",
   "weekly/upload": "Private voice upload authorised",
   "weekly/complete": "Private voice upload verified",
   "weekly/report": "Weekly PDF report served",
   "weekly/voice": "Private voice note served",
   entries: "Study entry accepted",
   retry: "Study processing retry requested",
+  work: "Learner processing cycle requested",
   "quiz/start": "Quiz attempt opened",
   "quiz/submit": "Quiz attempt response accepted",
 };

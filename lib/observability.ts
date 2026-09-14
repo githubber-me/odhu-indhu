@@ -10,6 +10,7 @@ type EventInput = {
     | "auth"
     | "storage"
     | "study"
+    | "topic"
     | "voice"
     | "report";
   eventType: string;

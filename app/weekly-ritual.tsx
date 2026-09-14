@@ -4,7 +4,10 @@ import { upload } from "@vercel/blob/client";
 import fixWebmDuration from "fix-webm-duration";
 import { useEffect, useRef, useState } from "react";
 import { weekLabel } from "@/lib/weekly-domain";
-import { reportClientIssue } from "@/lib/client-observability";
+import {
+  reportClientEvent,
+  reportClientIssue,
+} from "@/lib/client-observability";
 
 export type WeeklyState = {
   storageReady: boolean;
@@ -139,8 +142,27 @@ function VoiceTask({
           if (blob.size) {
             setRecordedSeconds(Math.max(1, Math.round(durationMs / 1_000)));
             setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
+            reportClientEvent({
+              level: "info",
+              eventType: "voice.recording.prepared",
+              outcome: "success",
+              message: "Voice recording prepared for playback",
+              metadata: {
+                kind,
+                weekStart,
+                type,
+                durationMs: Math.round(durationMs),
+                sizeBytes: blob.size,
+              },
+            });
             onNotice("Recording ready. Listen back or seal it for the week.");
           } else {
+            reportClientIssue({
+              eventType: "voice.recording.empty",
+              message: "The browser produced an empty voice recording",
+              errorCode: "EMPTY_RECORDING",
+              metadata: { kind, weekStart, type },
+            });
             onNotice("The recording was empty. Please try once more.");
           }
         } catch (error) {
@@ -155,6 +177,12 @@ function VoiceTask({
             setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
             onNotice("Recording ready. Listen back or seal it for the week.");
           } else {
+            reportClientIssue({
+              eventType: "voice.recording.empty",
+              message: "The browser produced an empty voice recording",
+              errorCode: "EMPTY_RECORDING",
+              metadata: { kind, weekStart, type },
+            });
             onNotice("The recording was empty. Please try once more.");
           }
         } finally {
@@ -164,8 +192,18 @@ function VoiceTask({
           acquired.getTracks().forEach((track) => track.stop());
         }
       };
-      next.onerror = () => {
+      next.onerror = (event) => {
         setRecording(false);
+        const mediaError =
+          "error" in event && event.error instanceof DOMException
+            ? event.error
+            : null;
+        reportClientIssue({
+          eventType: "voice.recording.failed",
+          message: "Voice recording stopped unexpectedly",
+          errorCode: mediaError?.name || "MEDIA_RECORDER_ERROR",
+          metadata: { kind, weekStart, type: next.mimeType || "unknown" },
+        });
         onNotice("Recording stopped unexpectedly. Please try again or choose an audio file.");
         acquired.getTracks().forEach((track) => track.stop());
       };
@@ -308,6 +346,23 @@ function VoiceTask({
                 controls
                 preload="metadata"
                 src={previewUrl}
+                onPlay={() =>
+                  reportClientEvent({
+                    level: "info",
+                    eventType: "voice.preview.played",
+                    outcome: "success",
+                    message: "Local voice-note preview played",
+                    metadata: { kind, weekStart, type: file.type },
+                  })
+                }
+                onError={() =>
+                  reportClientIssue({
+                    eventType: "voice.preview.playback_failed",
+                    message: "Local voice-note preview could not be played",
+                    errorCode: "MEDIA_PLAYBACK_ERROR",
+                    metadata: { kind, weekStart, type: file.type },
+                  })
+                }
                 onLoadedMetadata={(event) => {
                   const duration = event.currentTarget.duration;
                   if (Number.isFinite(duration) && duration > 0)
@@ -340,9 +395,11 @@ export function WeeklyRitual({
 
   async function downloadReport(id: string, weekStart: string) {
     setDownloading(id);
+    let stage = "report_request";
     try {
       const response = await fetch(`/api/weekly/report?id=${encodeURIComponent(id)}`);
       if (!response.ok) throw new Error("The weekly report could not be downloaded.");
+      stage = "browser_download";
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
@@ -351,6 +408,12 @@ export function WeeklyRitual({
       URL.revokeObjectURL(url);
       await onChanged();
     } catch (error) {
+      reportClientIssue({
+        eventType: "weekly.report.download_failed",
+        message: "Weekly report could not be downloaded",
+        errorCode: error instanceof Error ? error.name : "DOWNLOAD_ERROR",
+        metadata: { reportId: id, weekStart, stage },
+      });
       onNotice(error instanceof Error ? error.message : "The weekly report could not be downloaded.");
     } finally {
       setDownloading("");

@@ -196,6 +196,25 @@ export async function processNext(sessionId?: string, userId?: string) {
       const dailyNews = research.dailyNews;
       const evidence = await search(set.topic, set.subject, set.study_date);
       if (!evidence.length) throw new Error("NO_EVIDENCE");
+      await recordEvent({
+        category: "topic",
+        eventType: dailyNews
+          ? "topic.research.daily_news_completed"
+          : "topic.research.completed",
+        outcome: "success",
+        userId: String(set.user_id),
+        entityType: "topic_set",
+        entityId: String(set.id),
+        message: dailyNews
+          ? "Date-anchored newspaper research completed"
+          : "Topic research completed",
+        metadata: {
+          dailyNews,
+          evidenceSources: evidence.length,
+          studyDate: String(set.study_date),
+          subject: String(set.subject),
+        },
+      });
       const existing: Question[] = set.questions;
       const candidates = await model(
         "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on studyDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on studyDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",

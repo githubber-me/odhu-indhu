@@ -8,6 +8,7 @@ import { AuthView } from "@neondatabase/auth-ui";
 import { dailyHero } from "@/lib/daily-hero";
 import { WeeklyRitual, WeeklyState } from "@/app/weekly-ritual";
 import { weekLabel } from "@/lib/weekly-domain";
+import { reportClientIssue } from "@/lib/client-observability";
 type Session = {
   id: string;
   date: string;
@@ -952,6 +953,18 @@ export default function Home() {
                       controls
                       preload="none"
                       src={`/api/weekly/voice?id=${encodeURIComponent(note.id)}`}
+                      onError={() =>
+                        reportClientIssue({
+                          eventType: "voice.archive.playback_failed",
+                          message: "Archived voice note could not be played",
+                          errorCode: "MEDIA_PLAYBACK_ERROR",
+                          metadata: {
+                            kind: note.kind,
+                            weekStart: note.weekStart,
+                            noteId: note.id,
+                          },
+                        })
+                      }
                     >
                       Your browser cannot play this voice note.
                     </audio>
