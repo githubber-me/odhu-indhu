@@ -2,8 +2,9 @@ import "server-only";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
-import { questionSchema, Question, shiftDate } from "./domain";
+import { istDate, questionSchema, Question, shiftDate } from "./domain";
 import { recordEvent } from "./observability";
+import { contextualizeStudyTopics, quizResearchRequest } from "./study-context";
 const topicsSchema = z.object({
   topics: z
     .array(
@@ -99,8 +100,9 @@ async function model(
     );
   }
 }
-async function search(topic: string) {
-  const retrievedOn = new Date().toISOString().slice(0, 10);
+async function search(topic: string, subject: string, studyDate: string) {
+  const retrievedOn = istDate();
+  const request = quizResearchRequest(topic, subject, studyDate, retrievedOn);
   let response: Response;
   try {
     response = await fetch("https://api.parallel.ai/v1/search", {
@@ -111,14 +113,8 @@ async function search(topic: string) {
         "x-api-key": process.env.PARALLEL_API_KEY!,
       },
       body: JSON.stringify({
-        objective:
-          "Authoritative evidence for practice questions on " +
-          topic +
-          `. Research date: ${retrievedOn}. Prefer primary sources, government publications, established dictionaries, textbooks, and educational institutions. For current affairs, prioritize recent official sources and retain explicit event dates. Retrieve definitions, factual details, and worked examples appropriate to the studied material.`,
-        search_queries: [
-          topic + " authoritative reference",
-          topic + " core concepts " + retrievedOn.slice(0, 4),
-        ],
+        objective: request.objective,
+        search_queries: request.queries,
       }),
     });
   } catch (error) {
@@ -166,7 +162,12 @@ export async function processNext(sessionId?: string, userId?: string) {
           "low",
         ),
       );
-      for (const t of parsed.topics) {
+      const topics = contextualizeStudyTopics(
+        session.content,
+        session.date,
+        parsed.topics,
+      );
+      for (const t of topics) {
         const key =
           t.subject.toLowerCase().trim() +
           ":" +
@@ -186,12 +187,25 @@ export async function processNext(sessionId?: string, userId?: string) {
     }
     const set = sets.find((s) => s.status !== "ready");
     if (set) {
-      const evidence = await search(set.subject + " " + set.topic);
+      const research = quizResearchRequest(
+        set.topic,
+        set.subject,
+        set.study_date,
+        istDate(),
+      );
+      const dailyNews = research.dailyNews;
+      const evidence = await search(set.topic, set.subject, set.study_date);
       if (!evidence.length) throw new Error("NO_EVIDENCE");
       const existing: Question[] = set.questions;
       const candidates = await model(
-        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
-        { topic: set.topic, evidence, existing: existing.map((q) => q.stem) },
+        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on studyDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on studyDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
+        {
+          topic: set.topic,
+          studyDate: set.study_date,
+          dailyNews,
+          evidence,
+          existing: existing.map((q) => q.stem),
+        },
         candidatesSchema,
         "quiz_candidates",
       );
@@ -215,8 +229,8 @@ export async function processNext(sessionId?: string, userId?: string) {
       if (!valid.length) throw new Error("INVALID_QUESTIONS");
       const critique = critiqueSchema.parse(
         await model(
-          "Independently solve and rigorously review every candidate. Accept ONLY if exactly one option is defensible, the marked answer and ALL four explanations are accurate, sources directly support factual claims, and numerical calculations check out. Reject ambiguity, stale current facts, unsupported assertions and flawed distractors. Do not defer to the proposed answer. Verdict indices are zero based.",
-          { questions: valid, evidence },
+          "Independently solve and rigorously review every candidate. Accept ONLY if exactly one option is defensible, the marked answer and ALL four explanations are accurate, sources directly support factual claims, and numerical calculations check out. Reject ambiguity, stale current facts, unsupported assertions and flawed distractors. When dailyNews is true, also reject generic newspaper questions and any question whose event was neither on nor prominently reported on studyDate. Do not defer to the proposed answer. Verdict indices are zero based.",
+          { questions: valid, evidence, dailyNews, studyDate: set.study_date },
           critiqueSchema,
           "quiz_critique",
         ),
@@ -232,7 +246,7 @@ export async function processNext(sessionId?: string, userId?: string) {
           accepted.length < 10
         )
           accepted.push(q);
-      await sql`UPDATE topic_sets SET questions=${sql.json(accepted)}, evidence=${sql.json(evidence)},generator_model=${process.env.SARVAM_MODEL || "sarvam-105b"},prompt_version='2026-09-v1',status=${accepted.length === 10 ? "ready" : "partial"} WHERE id=${set.id}`;
+      await sql`UPDATE topic_sets SET questions=${sql.json(accepted)}, evidence=${sql.json(evidence)},generator_model=${process.env.SARVAM_MODEL || "sarvam-105b"},prompt_version='2026-09-v2-news-date',status=${accepted.length === 10 ? "ready" : "partial"} WHERE id=${set.id}`;
     }
     const remaining =
       await sql`SELECT 1 FROM topic_sets WHERE session_id=${session.id} AND status!='ready'`;
@@ -257,7 +271,8 @@ export async function processNext(sessionId?: string, userId?: string) {
       userId: String(session.user_id),
       entityType: "study_session",
       entityId: String(session.id),
-      message: error instanceof Error ? error.message : "Study processing failed",
+      message:
+        error instanceof Error ? error.message : "Study processing failed",
       errorCode: code,
       metadata: {
         attempt: Number(session.attempts),

@@ -15,6 +15,11 @@ import {
   goalEvidence,
   startOfIstWeek,
 } from "../lib/weekly-domain";
+import {
+  contextualizeStudyTopics,
+  dailyNewsTopic,
+  quizResearchRequest,
+} from "../lib/study-context";
 test("IST midnight is authoritative regardless of machine timezone", () => {
   assert.equal(istDate(new Date("2026-09-13T18:29:59Z")), "2026-09-13");
   assert.equal(istDate(new Date("2026-09-13T18:30:00Z")), "2026-09-14");
@@ -81,10 +86,7 @@ test("daily hero uses every line once before reshuffling", () => {
     dailyHero(shiftDate("2026-01-01", index)),
   );
   assert.equal(new Set(firstCycle).size, 40);
-  assert.notEqual(
-    firstCycle[39],
-    dailyHero(shiftDate("2026-01-01", 40)),
-  );
+  assert.notEqual(firstCycle[39], dailyHero(shiftDate("2026-01-01", 40)));
   const longRun = Array.from({ length: 800 }, (_, index) =>
     dailyHero(shiftDate("2026-01-01", index)),
   );
@@ -136,4 +138,42 @@ test("CSV handles quotes, Kannada, line breaks and spreadsheet injection", () =>
   const output = csv([{ content: 'ಓದು\n"quoted"', formula: " =SUM(A1)" }]);
   assert.ok(output.includes('ಓದು\n""quoted""'));
   assert.ok(output.includes("' =SUM(A1)"));
+});
+test("newspaper study becomes date-specific current affairs", () => {
+  assert.deepEqual(
+    contextualizeStudyTopics("Read the newspaper", "2026-09-14", [
+      { topic: "Newspaper", subject: "General" },
+    ]),
+    [dailyNewsTopic("2026-09-14")],
+  );
+});
+test("newspaper context keeps other topics and is added only once", () => {
+  assert.deepEqual(
+    contextualizeStudyTopics("Newspaper and percentages", "2026-09-14", [
+      { topic: "Percentages", subject: "Mathematics" },
+      { topic: "Current affairs", subject: "Current Affairs" },
+      { topic: "Newspaper", subject: "Current Affairs" },
+    ]),
+    [
+      { topic: "Percentages", subject: "Mathematics" },
+      dailyNewsTopic("2026-09-14"),
+    ],
+  );
+});
+test("daily news research is anchored to the study date", () => {
+  const request = quizResearchRequest(
+    dailyNewsTopic("2026-09-14").topic,
+    "Current Affairs",
+    "2026-09-14",
+    "2026-09-18",
+  );
+  assert.equal(request.dailyNews, true);
+  assert.ok(request.objective.includes("study date 2026-09-14"));
+  assert.ok(request.objective.includes("not the research date 2026-09-18"));
+  assert.ok(request.queries.every((query) => query.includes("2026-09-14")));
+  assert.equal(
+    quizResearchRequest("Newspaper", "General", "2026-09-14", "2026-09-18")
+      .dailyNews,
+    true,
+  );
 });
