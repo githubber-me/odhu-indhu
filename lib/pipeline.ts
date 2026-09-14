@@ -4,7 +4,11 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { istDate, questionSchema, Question, shiftDate } from "./domain";
 import { recordEvent } from "./observability";
-import { contextualizeStudyTopics, quizResearchRequest } from "./study-context";
+import {
+  contextualizeStudyTopics,
+  explicitStudyDate,
+  quizResearchRequest,
+} from "./study-context";
 const topicsSchema = z.object({
   topics: z
     .array(
@@ -100,9 +104,20 @@ async function model(
     );
   }
 }
-async function search(topic: string, subject: string, studyDate: string) {
+async function search(
+  topic: string,
+  subject: string,
+  studyDate: string,
+  explicitNewsDate?: string | null,
+) {
   const retrievedOn = istDate();
-  const request = quizResearchRequest(topic, subject, studyDate, retrievedOn);
+  const request = quizResearchRequest(
+    topic,
+    subject,
+    studyDate,
+    retrievedOn,
+    explicitNewsDate,
+  );
   let response: Response;
   try {
     response = await fetch("https://api.parallel.ai/v1/search", {
@@ -124,7 +139,7 @@ async function search(topic: string, subject: string, studyDate: string) {
   }
   if (!response.ok) throw new Error("SEARCH_" + response.status);
   const result = await response.json();
-  return z
+  const evidence = z
     .array(
       z.object({
         url: z.string().url(),
@@ -139,6 +154,7 @@ async function search(topic: string, subject: string, studyDate: string) {
       excerpts: s.excerpts.map((e) => e.slice(0, 3500)),
       retrievedAt: new Date().toISOString(),
     }));
+  return { evidence, newsDate: request.newsDate };
 }
 // Each invocation does one topic. The database lease and stored accepted questions survive retries.
 export async function processNext(sessionId?: string, userId?: string) {
@@ -187,14 +203,16 @@ export async function processNext(sessionId?: string, userId?: string) {
     }
     const set = sets.find((s) => s.status !== "ready");
     if (set) {
-      const research = quizResearchRequest(
+      const explicitNewsDate = explicitStudyDate(session.content);
+      const searchResult = await search(
         set.topic,
         set.subject,
         set.study_date,
-        istDate(),
+        explicitNewsDate,
       );
-      const dailyNews = research.dailyNews;
-      const evidence = await search(set.topic, set.subject, set.study_date);
+      const evidence = searchResult.evidence;
+      const newsDate = searchResult.newsDate;
+      const dailyNews = newsDate !== null;
       if (!evidence.length) throw new Error("NO_EVIDENCE");
       await recordEvent({
         category: "topic",
@@ -212,15 +230,17 @@ export async function processNext(sessionId?: string, userId?: string) {
           dailyNews,
           evidenceSources: evidence.length,
           studyDate: String(set.study_date),
+          newsDate,
           subject: String(set.subject),
         },
       });
       const existing: Question[] = set.questions;
       const candidates = await model(
-        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on studyDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on studyDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
+        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on newsDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on newsDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
         {
           topic: set.topic,
           studyDate: set.study_date,
+          newsDate,
           dailyNews,
           evidence,
           existing: existing.map((q) => q.stem),
@@ -248,8 +268,14 @@ export async function processNext(sessionId?: string, userId?: string) {
       if (!valid.length) throw new Error("INVALID_QUESTIONS");
       const critique = critiqueSchema.parse(
         await model(
-          "Independently solve and rigorously review every candidate. Accept ONLY if exactly one option is defensible, the marked answer and ALL four explanations are accurate, sources directly support factual claims, and numerical calculations check out. Reject ambiguity, stale current facts, unsupported assertions and flawed distractors. When dailyNews is true, also reject generic newspaper questions and any question whose event was neither on nor prominently reported on studyDate. Do not defer to the proposed answer. Verdict indices are zero based.",
-          { questions: valid, evidence, dailyNews, studyDate: set.study_date },
+          "Independently solve and rigorously review every candidate. Accept ONLY if exactly one option is defensible, the marked answer and ALL four explanations are accurate, sources directly support factual claims, and numerical calculations check out. Reject ambiguity, stale current facts, unsupported assertions and flawed distractors. When dailyNews is true, also reject generic newspaper questions and any question whose event was neither on nor prominently reported on newsDate. Do not defer to the proposed answer. Verdict indices are zero based.",
+          {
+            questions: valid,
+            evidence,
+            dailyNews,
+            studyDate: set.study_date,
+            newsDate,
+          },
           critiqueSchema,
           "quiz_critique",
         ),
@@ -265,7 +291,7 @@ export async function processNext(sessionId?: string, userId?: string) {
           accepted.length < 10
         )
           accepted.push(q);
-      await sql`UPDATE topic_sets SET questions=${sql.json(accepted)}, evidence=${sql.json(evidence)},generator_model=${process.env.SARVAM_MODEL || "sarvam-105b"},prompt_version='2026-09-v2-news-date',status=${accepted.length === 10 ? "ready" : "partial"} WHERE id=${set.id}`;
+      await sql`UPDATE topic_sets SET questions=${sql.json(accepted)}, evidence=${sql.json(evidence)},generator_model=${process.env.SARVAM_MODEL || "sarvam-105b"},prompt_version='2026-09-v3-explicit-news-date',status=${accepted.length === 10 ? "ready" : "partial"} WHERE id=${set.id}`;
     }
     const remaining =
       await sql`SELECT 1 FROM topic_sets WHERE session_id=${session.id} AND status!='ready'`;
