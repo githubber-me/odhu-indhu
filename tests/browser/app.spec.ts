@@ -22,6 +22,9 @@ test("social previews expose public Open Graph and X cards", async ({
   const manifest = await request.get("/manifest.webmanifest");
   expect(manifest.ok()).toBe(true);
   expect((await manifest.json()).name).toBe("Odhu Indhu");
+  const home = await request.get("/");
+  expect(home.headers()["permissions-policy"]).toContain("microphone=(self)");
+  expect(home.headers()["permissions-policy"]).not.toContain("microphone=()");
 });
 test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
   await page.route("**/api/status", async (route) => {
@@ -124,6 +127,39 @@ test("Recall stays hidden until study has been logged on two IST days", async ({
 test("weekly report and voice rituals lead the signed-in mobile view", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    const mediaStream = {
+      getTracks: () => [{ stop: () => undefined }],
+    };
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => mediaStream },
+    });
+    class MockMediaRecorder {
+      static isTypeSupported() {
+        return true;
+      }
+      state: RecordingState = "inactive";
+      mimeType = "audio/webm;codecs=opus";
+      ondataavailable: ((event: BlobEvent) => void) | null = null;
+      onstop: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({
+          data: new Blob(["recorded voice"], { type: this.mimeType }),
+        } as BlobEvent);
+        this.onstop?.();
+      }
+    }
+    Object.defineProperty(window, "MediaRecorder", {
+      configurable: true,
+      value: MockMediaRecorder,
+    });
+  });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/status")
@@ -172,6 +208,14 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
   await expect(priority.getByText("YOUR WEEKLY LEDGER IS READY")).toBeVisible();
   await expect(priority.getByText("CLOSE THE WEEK")).toBeVisible();
   await expect(priority.getByText("THIS WEEK’S INTENTION")).toBeVisible();
+  const intention = priority.locator(".weeklyVoiceAction").filter({
+    hasText: "THIS WEEK’S INTENTION",
+  });
+  await intention.getByRole("button", { name: "RECORD" }).click();
+  await expect(intention.getByRole("button", { name: /STOP 0:00/ })).toBeVisible();
+  await intention.getByRole("button", { name: /STOP/ }).click();
+  await expect(intention.getByRole("button", { name: /SEAL VOICE NOTE/ })).toBeVisible();
+  await expect(intention.locator("audio")).toHaveCount(1);
   await expect(page.locator(".weeklyPriority + .hero")).toHaveCount(1);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -182,7 +226,7 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
   await expect(page.getByText("student@example.com")).toBeVisible();
   await expect(page.getByText("WEEKLY PDF")).toBeVisible();
   await expect(page.getByText("WEEKLY REFLECTION")).toBeVisible();
-  await expect(page.locator("audio")).toHaveCount(1);
+  await expect(page.locator(".weeklyArchive audio")).toHaveCount(1);
 });
 test("ledger, history, delayed quizzes and post-submit explanations at desktop and mobile", async ({
   page,

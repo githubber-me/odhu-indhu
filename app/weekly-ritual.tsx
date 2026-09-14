@@ -48,6 +48,8 @@ function VoiceTask({
   disabled: boolean;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [starting, setStarting] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -69,18 +71,48 @@ function VoiceTask({
     [],
   );
 
-  async function toggleRecording() {
-    if (recording) {
-      recorder.current?.stop();
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl("");
       return;
     }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  async function toggleRecording() {
+    if (recording) {
+      if (recorder.current?.state !== "inactive") recorder.current?.stop();
+      return;
+    }
+    if (starting) return;
+    let media: MediaStream | null = null;
     try {
-      const media = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const preferred = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(
-        (type) => MediaRecorder.isTypeSupported(type),
+      setStarting(true);
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)
+        throw new DOMException("Recording requires a secure browser connection.", "SecurityError");
+      if (!("MediaRecorder" in window))
+        throw new DOMException("This browser does not support audio recording.", "NotSupportedError");
+      const acquired = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      media = acquired;
+      const preferred = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/mp4;codecs=mp4a.40.2",
+        "audio/mp4",
+        "audio/webm",
+      ].find(
+        (type) => window.MediaRecorder.isTypeSupported(type),
       );
-      const next = new MediaRecorder(media, preferred ? { mimeType: preferred } : undefined);
-      stream.current = media;
+      const next = new window.MediaRecorder(acquired, preferred ? { mimeType: preferred } : undefined);
+      stream.current = acquired;
       chunks.current = [];
       setElapsed(0);
       next.ondataavailable = (event) => {
@@ -89,21 +121,47 @@ function VoiceTask({
       next.onstop = () => {
         const type = next.mimeType || "audio/webm";
         const blob = new Blob(chunks.current, { type });
-        setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
+        if (blob.size) {
+          setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
+          onNotice("Recording ready. Listen back or seal it for the week.");
+        } else {
+          onNotice("The recording was empty. Please try once more.");
+        }
         setRecording(false);
-        media.getTracks().forEach((track) => track.stop());
+        recorder.current = null;
+        stream.current = null;
+        acquired.getTracks().forEach((track) => track.stop());
+      };
+      next.onerror = () => {
+        setRecording(false);
+        onNotice("Recording stopped unexpectedly. Please try again or choose an audio file.");
+        acquired.getTracks().forEach((track) => track.stop());
       };
       recorder.current = next;
       next.start(1000);
       setRecording(true);
     } catch (error) {
+      media?.getTracks().forEach((track) => track.stop());
+      stream.current = null;
+      recorder.current = null;
       reportClientIssue({
         eventType: "voice.microphone.unavailable",
         message: "Microphone access was not available",
         errorCode: error instanceof Error ? error.name : "MEDIA_ERROR",
         metadata: { kind, weekStart },
       });
-      onNotice("Microphone access was not available. You can upload an existing voice note instead.");
+      const name = error instanceof Error ? error.name : "";
+      onNotice(
+        name === "NotAllowedError"
+          ? "Microphone permission is blocked. Allow it in your browser’s site settings, then try again."
+          : name === "NotFoundError"
+            ? "No microphone was found. Connect one or choose an existing voice note."
+            : error instanceof Error && error.message
+              ? error.message
+              : "Microphone access was not available. You can upload an existing voice note instead.",
+      );
+    } finally {
+      setStarting(false);
     }
   }
 
@@ -181,9 +239,13 @@ function VoiceTask({
       </div>
       <div className="voiceControls">
         {!disabled && (
-          <button className={recording ? "recordButton recording" : "recordButton"} onClick={toggleRecording} type="button">
+          <button className={recording ? "recordButton recording" : "recordButton"} disabled={starting} onClick={toggleRecording} type="button">
             <i aria-hidden="true" />
-            {recording ? `STOP ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}` : "RECORD"}
+            {recording
+              ? `STOP ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
+              : starting
+                ? "OPENING MICROPHONE…"
+                : "RECORD"}
           </button>
         )}
         {!recording && !disabled && (
@@ -199,6 +261,7 @@ function VoiceTask({
         {file && !recording && (
           <div className="chosenVoice">
             <span>{file.name}</span>
+            {previewUrl && <audio controls src={previewUrl} />}
             <button className="primaryButton" disabled={busy || disabled} onClick={send} type="button">
               {busy ? `UPLOADING ${progress}%` : "SEAL VOICE NOTE ↗"}
             </button>
