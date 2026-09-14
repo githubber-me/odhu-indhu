@@ -25,6 +25,7 @@ test("social previews expose public Open Graph and X cards", async ({
   const home = await request.get("/");
   expect(home.headers()["permissions-policy"]).toContain("microphone=(self)");
   expect(home.headers()["permissions-policy"]).not.toContain("microphone=()");
+  expect(home.headers()["content-security-policy"]).toContain("media-src 'self' blob:");
 });
 test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
   await page.route("**/api/status", async (route) => {
@@ -110,6 +111,7 @@ test("Recall stays hidden until study has been logged on two IST days", async ({
             storageReady: true,
             currentWeekStart: "2026-09-07",
             planPending: false,
+            currentGoals: [],
             pendingSummaries: [],
             reports: [],
             voiceNotes: [],
@@ -136,11 +138,11 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
       value: { getUserMedia: async () => mediaStream },
     });
     class MockMediaRecorder {
-      static isTypeSupported() {
-        return true;
+      static isTypeSupported(type: string) {
+        return type === "audio/wav";
       }
       state: RecordingState = "inactive";
-      mimeType = "audio/webm;codecs=opus";
+      mimeType = "audio/wav";
       ondataavailable: ((event: BlobEvent) => void) | null = null;
       onstop: (() => void) | null = null;
       onerror: (() => void) | null = null;
@@ -149,8 +151,30 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
       }
       stop() {
         this.state = "inactive";
+        const sampleRate = 8_000;
+        const samples = sampleRate;
+        const buffer = new ArrayBuffer(44 + samples);
+        const view = new DataView(buffer);
+        const write = (offset: number, value: string) =>
+          [...value].forEach((character, index) =>
+            view.setUint8(offset + index, character.charCodeAt(0)),
+          );
+        write(0, "RIFF");
+        view.setUint32(4, 36 + samples, true);
+        write(8, "WAVE");
+        write(12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate, true);
+        view.setUint16(32, 1, true);
+        view.setUint16(34, 8, true);
+        write(36, "data");
+        view.setUint32(40, samples, true);
+        new Uint8Array(buffer, 44).fill(128);
         this.ondataavailable?.({
-          data: new Blob(["recorded voice"], { type: this.mimeType }),
+          data: new Blob([buffer], { type: this.mimeType }),
         } as BlobEvent);
         this.onstop?.();
       }
@@ -180,6 +204,7 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
             storageReady: true,
             currentWeekStart: "2026-09-07",
             planPending: true,
+            currentGoals: [],
             pendingSummaries: ["2026-09-07"],
             reports: [
               {
@@ -215,7 +240,18 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
   await expect(intention.getByRole("button", { name: /STOP 0:00/ })).toBeVisible();
   await intention.getByRole("button", { name: /STOP/ }).click();
   await expect(intention.getByRole("button", { name: /SEAL VOICE NOTE/ })).toBeVisible();
+  await expect(intention.getByText(/0:01/)).toBeVisible();
   await expect(intention.locator("audio")).toHaveCount(1);
+  const playback = await intention.locator("audio").evaluate(async (element) => {
+    const audio = element as HTMLAudioElement;
+    audio.muted = true;
+    await audio.play();
+    const state = { paused: audio.paused, duration: audio.duration };
+    audio.pause();
+    return state;
+  });
+  expect(playback.paused).toBe(false);
+  expect(playback.duration).toBeGreaterThan(0);
   await expect(page.locator(".weeklyPriority + .hero")).toHaveCount(1);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -280,6 +316,18 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
       storageReady: true,
       currentWeekStart: "2026-09-07",
       planPending: false,
+      currentGoals: [
+        {
+          title: "Finish types of Indian soils and revise maps",
+          category: "Indian Geography",
+          target: "Three focused sessions",
+        },
+        {
+          title: "Cover Karnataka current affairs",
+          category: "Current Affairs",
+          target: "Four short reviews",
+        },
+      ],
       pendingSummaries: [],
       reports: [],
       voiceNotes: [],
@@ -324,6 +372,12 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto("/");
   await expect(page.getByText("✓ DAY COMPLETE")).toBeVisible();
+  const weeklyGoals = page.locator("details.weeklyGoals");
+  await expect(weeklyGoals).toBeVisible();
+  await expect(weeklyGoals).not.toHaveAttribute("open", "");
+  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeHidden();
+  await weeklyGoals.locator("summary").click();
+  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeVisible();
   await page.getByLabel("WHAT DID YOU STUDY?").fill("Indian monsoon patterns");
   await expect(page.getByText("23 / 12,000")).toBeVisible();
   await page.getByRole("button", { name: "90m" }).click();
@@ -349,6 +403,8 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "01 / TODAY" }).click();
+  await weeklyGoals.locator("summary").click();
+  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

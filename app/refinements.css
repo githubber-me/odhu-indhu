@@ -173,6 +173,86 @@ h2,
   max-width: 100%;
   height: 36px;
 }
+.weeklyGoals {
+  margin-top: 64px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.weeklyGoals summary {
+  min-height: 112px;
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  cursor: pointer;
+  list-style: none;
+}
+.weeklyGoals summary::-webkit-details-marker {
+  display: none;
+}
+.weeklyGoals summary span {
+  display: grid;
+  gap: 9px;
+}
+.weeklyGoals summary strong {
+  font: 500 clamp(21px, 3vw, 31px) "Courier New", monospace;
+  letter-spacing: -0.045em;
+}
+.weeklyGoals summary b {
+  color: var(--red);
+  font: 600 9px "Courier New", monospace;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.weeklyGoals[open] summary b {
+  font-size: 0;
+}
+.weeklyGoals[open] summary b::after {
+  content: "CLOSE -";
+  font-size: 9px;
+}
+.weeklyGoalList {
+  border-top: 1px solid var(--line);
+  padding-bottom: 18px;
+}
+.weeklyGoalList article {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 18px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+.weeklyGoalList article:last-child {
+  border-bottom: 0;
+}
+.weeklyGoalList article > span {
+  color: var(--red);
+  font: 500 21px "Courier New", monospace;
+}
+.weeklyGoalList article div {
+  display: grid;
+  gap: 6px;
+}
+.weeklyGoalList small {
+  color: var(--muted);
+  font: 600 8px "Courier New", monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.weeklyGoalList h3,
+.weeklyGoalList p {
+  margin: 0;
+}
+.weeklyGoalList h3 {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.weeklyGoalList p {
+  color: var(--muted);
+  font-size: 12px;
+}
 .profileForm {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);

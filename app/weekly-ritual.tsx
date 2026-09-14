@@ -1,6 +1,7 @@
 "use client";
 
 import { upload } from "@vercel/blob/client";
+import fixWebmDuration from "fix-webm-duration";
 import { useEffect, useRef, useState } from "react";
 import { weekLabel } from "@/lib/weekly-domain";
 import { reportClientIssue } from "@/lib/client-observability";
@@ -9,6 +10,11 @@ export type WeeklyState = {
   storageReady: boolean;
   currentWeekStart: string;
   planPending: boolean;
+  currentGoals: {
+    title: string;
+    category: string;
+    target: string;
+  }[];
   pendingSummaries: string[];
   reports: {
     id: string;
@@ -50,13 +56,16 @@ function VoiceTask({
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [starting, setStarting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const startedAt = useRef(0);
 
   useEffect(() => {
     if (!recording) return;
@@ -118,19 +127,42 @@ function VoiceTask({
       next.ondataavailable = (event) => {
         if (event.data.size) chunks.current.push(event.data);
       };
-      next.onstop = () => {
-        const type = next.mimeType || "audio/webm";
-        const blob = new Blob(chunks.current, { type });
-        if (blob.size) {
-          setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
-          onNotice("Recording ready. Listen back or seal it for the week.");
-        } else {
-          onNotice("The recording was empty. Please try once more.");
-        }
+      next.onstop = async () => {
         setRecording(false);
-        recorder.current = null;
-        stream.current = null;
-        acquired.getTracks().forEach((track) => track.stop());
+        setFinishing(true);
+        const type = next.mimeType || "audio/webm";
+        const durationMs = Math.max(1_000, performance.now() - startedAt.current);
+        let blob = new Blob(chunks.current, { type });
+        try {
+          if (type.includes("webm"))
+            blob = await fixWebmDuration(blob, durationMs, { logger: false });
+          if (blob.size) {
+            setRecordedSeconds(Math.max(1, Math.round(durationMs / 1_000)));
+            setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
+            onNotice("Recording ready. Listen back or seal it for the week.");
+          } else {
+            onNotice("The recording was empty. Please try once more.");
+          }
+        } catch (error) {
+          reportClientIssue({
+            eventType: "voice.preview.preparation_failed",
+            message: "Recorded audio metadata could not be prepared",
+            errorCode: error instanceof Error ? error.name : "DURATION_REPAIR_ERROR",
+            metadata: { kind, weekStart, type, durationMs: Math.round(durationMs) },
+          });
+          if (blob.size) {
+            setRecordedSeconds(Math.max(1, Math.round(durationMs / 1_000)));
+            setFile(new File([blob], `${kind}-${weekStart}.${extension(type)}`, { type }));
+            onNotice("Recording ready. Listen back or seal it for the week.");
+          } else {
+            onNotice("The recording was empty. Please try once more.");
+          }
+        } finally {
+          setFinishing(false);
+          recorder.current = null;
+          stream.current = null;
+          acquired.getTracks().forEach((track) => track.stop());
+        }
       };
       next.onerror = () => {
         setRecording(false);
@@ -139,6 +171,7 @@ function VoiceTask({
       };
       recorder.current = next;
       next.start(1000);
+      startedAt.current = performance.now();
       setRecording(true);
     } catch (error) {
       media?.getTracks().forEach((track) => track.stop());
@@ -239,29 +272,49 @@ function VoiceTask({
       </div>
       <div className="voiceControls">
         {!disabled && (
-          <button className={recording ? "recordButton recording" : "recordButton"} disabled={starting} onClick={toggleRecording} type="button">
+          <button className={recording ? "recordButton recording" : "recordButton"} disabled={starting || finishing} onClick={toggleRecording} type="button">
             <i aria-hidden="true" />
             {recording
               ? `STOP ${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`
-              : starting
+              : finishing
+                ? "PREPARING PLAYBACK…"
+                : starting
                 ? "OPENING MICROPHONE…"
                 : "RECORD"}
           </button>
         )}
-        {!recording && !disabled && (
+        {!recording && !finishing && !disabled && (
           <label className="voiceFileButton">
             <input
               type="file"
               accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm"
-              onChange={(event) => setFile(event.target.files?.[0] || null)}
+              onChange={(event) => {
+                setRecordedSeconds(0);
+                setFile(event.target.files?.[0] || null);
+              }}
             />
             CHOOSE AUDIO
           </label>
         )}
         {file && !recording && (
           <div className="chosenVoice">
-            <span>{file.name}</span>
-            {previewUrl && <audio controls src={previewUrl} />}
+            <span>
+              {file.name}
+              {recordedSeconds > 0 &&
+                ` · ${Math.floor(recordedSeconds / 60)}:${String(recordedSeconds % 60).padStart(2, "0")}`}
+            </span>
+            {previewUrl && (
+              <audio
+                controls
+                preload="metadata"
+                src={previewUrl}
+                onLoadedMetadata={(event) => {
+                  const duration = event.currentTarget.duration;
+                  if (Number.isFinite(duration) && duration > 0)
+                    setRecordedSeconds(Math.max(1, Math.round(duration)));
+                }}
+              />
+            )}
             <button className="primaryButton" disabled={busy || disabled} onClick={send} type="button">
               {busy ? `UPLOADING ${progress}%` : "SEAL VOICE NOTE ↗"}
             </button>

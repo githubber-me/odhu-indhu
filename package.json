@@ -15,6 +15,7 @@
     "@neondatabase/auth": "0.5.0-beta",
     "@neondatabase/auth-ui": "0.3.0-beta",
     "@vercel/blob": "^2.8.0",
+    "fix-webm-duration": "^1.0.6",
     "next": "^16.3.5",
     "pdf-lib": "^1.17.1",
     "postgres": "^3.4.9",

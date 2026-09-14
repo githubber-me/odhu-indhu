@@ -347,6 +347,13 @@ export async function weeklyDashboard(userId: string, today = istDate()) {
   const sql = db();
   const currentWeekStart = startOfIstWeek(today);
   const notes = await sql`SELECT id,week_start AS "weekStart",kind,uploaded_at AS "uploadedAt" FROM weekly_voice_notes WHERE user_id=${userId} AND week_start>=${shiftDate(currentWeekStart, -56)} ORDER BY week_start DESC,kind`;
+  const currentPlan = await sql`
+    SELECT structured FROM weekly_voice_notes
+    WHERE user_id=${userId} AND week_start=${currentWeekStart}
+    AND kind='plan' AND status='ready'
+    LIMIT 1`;
+  const parsedPlan = planSchema.safeParse(currentPlan[0]?.structured);
+  const currentGoals = parsedPlan.success ? parsedPlan.data.goals : [];
   const reports = await sql`SELECT id,week_start AS "weekStart",generated_at AS "generatedAt",downloaded_at AS "downloadedAt" FROM weekly_reports WHERE user_id=${userId} ORDER BY week_start DESC`;
   const has = (weekStart: string, kind: NoteKind) =>
     notes.some((note) => note.weekStart === weekStart && note.kind === kind);
@@ -381,6 +388,7 @@ export async function weeklyDashboard(userId: string, today = istDate()) {
     storageReady: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
     currentWeekStart,
     planPending: !has(currentWeekStart, "plan"),
+    currentGoals,
     pendingSummaries,
     reports,
     voiceNotes: notes,

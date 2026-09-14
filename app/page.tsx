@@ -66,6 +66,7 @@ export default function Home() {
       storageReady: false,
       currentWeekStart: "",
       planPending: false,
+      currentGoals: [],
       pendingSummaries: [],
       reports: [],
       voiceNotes: [],
@@ -860,6 +861,32 @@ export default function Home() {
                 </>
               )}
             </section>
+          )}
+          {data.weekly.currentGoals.length > 0 && (
+            <details className="weeklyGoals">
+              <summary>
+                <span>
+                  <small className="eyebrow">THIS WEEK’S INTENTIONS</small>
+                  <strong>
+                    {data.weekly.currentGoals.length} goal
+                    {data.weekly.currentGoals.length === 1 ? "" : "s"}, quietly in view.
+                  </strong>
+                </span>
+                <b aria-hidden="true">OPEN +</b>
+              </summary>
+              <div className="weeklyGoalList">
+                {data.weekly.currentGoals.map((goal, index) => (
+                  <article key={`${goal.title}-${index}`}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <div>
+                      <small>{goal.category || "STUDY"}</small>
+                      <h3>{goal.title}</h3>
+                      {goal.target && <p>{goal.target}</p>}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </details>
           )}
           <dialog
             ref={dialog}
