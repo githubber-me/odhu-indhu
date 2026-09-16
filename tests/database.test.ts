@@ -39,6 +39,26 @@ test("migration is repeatable; entries deduplicate; topic dates and attempt answ
       "UPDATE study_sessions SET status='processing' WHERE id=$1",
       [id],
     );
+    await db.query(
+      "INSERT INTO day_entries(id,user_id,date,start_minute,end_minute,activity,subject,topic,note,study_session_id) VALUES($1,'00000000-0000-4000-8000-000000000001','2026-09-13',540,600,'Study','Quant','Percentages','Practice set',$1)",
+      [id],
+    );
+    const dayRow = await db.query<{
+      start_minute: number;
+      end_minute: number;
+      study_session_id: string;
+    }>("SELECT start_minute,end_minute,study_session_id FROM day_entries");
+    assert.deepEqual(dayRow.rows[0], {
+      start_minute: 540,
+      end_minute: 600,
+      study_session_id: id,
+    });
+    await assert.rejects(
+      db.query(
+        "INSERT INTO day_entries(id,user_id,date,start_minute,end_minute,activity) VALUES($1,'00000000-0000-4000-8000-000000000001','2026-09-13',600,540,'Work')",
+        [set],
+      ),
+    );
     await assert.rejects(
       db.query(
         "INSERT INTO study_sessions(id,content,duration,date) VALUES($1,$2,0,$3)",

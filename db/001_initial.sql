@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS topic_sets (
  status text NOT NULL DEFAULT 'queued', created_at timestamptz NOT NULL DEFAULT now(),
  CONSTRAINT topic_sets_user_date_topic_key UNIQUE(user_id, study_date, normalized_key)
 );
+CREATE TABLE IF NOT EXISTS day_entries (
+ id uuid PRIMARY KEY,
+ user_id uuid NOT NULL REFERENCES app_users(id),
+ date text NOT NULL,
+ start_minute integer NOT NULL CHECK(start_minute BETWEEN 0 AND 1439),
+ end_minute integer NOT NULL CHECK(end_minute BETWEEN 1 AND 1440 AND end_minute>start_minute),
+ activity text NOT NULL CHECK(activity IN ('Study','Work','Sleep','Break','Exercise','Travel','Personal','Other')),
+ subject text NOT NULL DEFAULT '' CHECK(length(subject)<=100),
+ topic text NOT NULL DEFAULT '' CHECK(length(topic)<=200),
+ note text NOT NULL DEFAULT '' CHECK(length(note)<=2000),
+ study_session_id uuid UNIQUE REFERENCES study_sessions(id),
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS day_entries_user_date_time
+ON day_entries(user_id,date,start_minute,end_minute);
 CREATE TABLE IF NOT EXISTS quiz_attempts (
  id uuid PRIMARY KEY,
  user_id uuid NOT NULL DEFAULT '00000000-0000-4000-8000-000000000001' REFERENCES app_users(id),

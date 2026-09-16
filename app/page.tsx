@@ -9,6 +9,8 @@ import { dailyHero } from "@/lib/daily-hero";
 import { WeeklyRitual, WeeklyState } from "@/app/weekly-ritual";
 import { weekLabel } from "@/lib/weekly-domain";
 import { reportClientIssue } from "@/lib/client-observability";
+import { DayLedger } from "@/app/day-ledger";
+import { DayEntry } from "@/lib/day-ledger";
 type Session = {
   id: string;
   date: string;
@@ -35,6 +37,7 @@ type Data = {
   sessions: Session[];
   sets: SetInfo[];
   attempts: { id: string; setId: string; score: number; count: number }[];
+  dayEntries: DayEntry[];
   weekly: WeeklyState;
 };
 type Quiz = {
@@ -63,6 +66,7 @@ export default function Home() {
     sessions: [],
     sets: [],
     attempts: [],
+    dayEntries: [],
     weekly: {
       storageReady: false,
       currentWeekStart: "",
@@ -143,8 +147,7 @@ export default function Home() {
       playOpening =
         sessionStorage.getItem("odhu-indhu-opening-played") !== "1" &&
         !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (playOpening)
-        sessionStorage.setItem("odhu-indhu-opening-played", "1");
+      if (playOpening) sessionStorage.setItem("odhu-indhu-opening-played", "1");
     } catch {}
     const opening = playOpening
       ? new Promise((resolve) => setTimeout(resolve, 2400))
@@ -356,8 +359,8 @@ export default function Home() {
               Preparing your <em>space.</em>
             </h2>
             <p>
-              Private access is being configured. Once it’s ready, you can
-              start your first study streak here.
+              Private access is being configured. Once it’s ready, you can start
+              your first study streak here.
             </p>
           </div>
           {notice && (
@@ -411,10 +414,9 @@ export default function Home() {
             )}
           </div>
           <nav className="tabs" aria-label="Main navigation">
-            {(
-              data.recallVisible
-                ? (["today", "history", "quizzes"] as const)
-                : (["today", "history"] as const)
+            {(data.recallVisible
+              ? (["today", "history", "quizzes"] as const)
+              : (["today", "history"] as const)
             ).map((t) => (
               <button
                 key={t}
@@ -481,9 +483,18 @@ export default function Home() {
                   Small sessions add up. Today closes at midnight IST.
                 </p>
               </section>
+              <DayLedger
+                today={data.today}
+                entries={data.dayEntries || []}
+                onNotice={setNotice}
+                onSave={async (entry) => {
+                  await api("day-entries", entry);
+                  await reload();
+                }}
+              />
               <form className="entryForm" onSubmit={submit}>
                 <div className="formHeader">
-                  <span className="eyebrow">A NEW LINE IN YOUR LEDGER</span>
+                  <span className="eyebrow">QUICK STUDY ENTRY</span>
                   <span className="entryDate">{data.today}</span>
                 </div>
                 <label htmlFor="study">WHAT DID YOU STUDY?</label>
@@ -532,7 +543,10 @@ export default function Home() {
                         MIN
                       </span>
                     </label>
-                    <div className="durationPresets" aria-label="Quick duration">
+                    <div
+                      className="durationPresets"
+                      aria-label="Quick duration"
+                    >
                       {[30, 45, 60, 90, 120].map((minutes) => (
                         <button
                           type="button"
@@ -870,7 +884,8 @@ export default function Home() {
                   <small className="eyebrow">THIS WEEK’S INTENTIONS</small>
                   <strong>
                     {data.weekly.currentGoals.length} goal
-                    {data.weekly.currentGoals.length === 1 ? "" : "s"}, quietly in view.
+                    {data.weekly.currentGoals.length === 1 ? "" : "s"}, quietly
+                    in view.
                   </strong>
                 </span>
                 <b aria-hidden="true">OPEN +</b>
@@ -933,7 +948,9 @@ export default function Home() {
                   <a
                     className="archiveReport"
                     href={`/api/weekly/report?id=${encodeURIComponent(report.id)}`}
-                    onClick={() => window.setTimeout(() => reload().catch(() => {}), 1000)}
+                    onClick={() =>
+                      window.setTimeout(() => reload().catch(() => {}), 1000)
+                    }
                     key={report.id}
                   >
                     <span>
@@ -946,7 +963,11 @@ export default function Home() {
                 {data.weekly.voiceNotes.map((note) => (
                   <article className="archiveVoice" key={note.id}>
                     <div>
-                      <b>{note.kind === "plan" ? "WEEKLY INTENTION" : "WEEKLY REFLECTION"}</b>
+                      <b>
+                        {note.kind === "plan"
+                          ? "WEEKLY INTENTION"
+                          : "WEEKLY REFLECTION"}
+                      </b>
                       <span>{weekLabel(note.weekStart)}</span>
                     </div>
                     <audio
@@ -977,14 +998,18 @@ export default function Home() {
               completed topics.
             </p>
             <div className="exportLinks">
-              {["raw", "topics", "questions", "attempts"].map((type) => (
-                <a href={"/api/exports/" + type} key={type}>
-                  {type === "raw"
-                    ? "Study entries"
-                    : type.charAt(0).toUpperCase() + type.slice(1)}{" "}
-                  <span>CSV ↓</span>
-                </a>
-              ))}
+              {["raw", "day-ledger", "topics", "questions", "attempts"].map(
+                (type) => (
+                  <a href={"/api/exports/" + type} key={type}>
+                    {type === "raw"
+                      ? "Study entries"
+                      : type === "day-ledger"
+                        ? "Day ledger"
+                        : type.charAt(0).toUpperCase() + type.slice(1)}{" "}
+                    <span>CSV ↓</span>
+                  </a>
+                ),
+              )}
             </div>
             {legacy && (
               <button className="textButton" onClick={downloadLegacy}>

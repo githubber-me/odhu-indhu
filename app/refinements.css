@@ -5,7 +5,8 @@ button:disabled {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+select:focus-visible {
   outline: 2px solid var(--red);
   outline-offset: 4px;
 }
@@ -69,7 +70,9 @@ h2,
   background: var(--red);
 }
 .weeklyActionCopy h2 {
-  font: 500 clamp(25px, 3.2vw, 39px) "Courier New", monospace;
+  font:
+    500 clamp(25px, 3.2vw, 39px) "Courier New",
+    monospace;
   letter-spacing: -0.065em;
   margin: 10px 0 9px;
 }
@@ -81,7 +84,9 @@ h2,
 }
 .weeklyActionCopy > span {
   color: var(--red);
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -119,7 +124,9 @@ h2,
   align-items: center;
   gap: 10px;
   padding: 12px 15px;
-  font: 600 10px "Courier New", monospace;
+  font:
+    600 10px "Courier New",
+    monospace;
   letter-spacing: 0.08em;
 }
 .recordButton i {
@@ -196,12 +203,16 @@ h2,
   gap: 9px;
 }
 .weeklyGoals summary strong {
-  font: 500 clamp(21px, 3vw, 31px) "Courier New", monospace;
+  font:
+    500 clamp(21px, 3vw, 31px) "Courier New",
+    monospace;
   letter-spacing: -0.045em;
 }
 .weeklyGoals summary b {
   color: var(--red);
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   letter-spacing: 0.08em;
   white-space: nowrap;
 }
@@ -228,7 +239,9 @@ h2,
 }
 .weeklyGoalList article > span {
   color: var(--red);
-  font: 500 21px "Courier New", monospace;
+  font:
+    500 21px "Courier New",
+    monospace;
 }
 .weeklyGoalList article div {
   display: grid;
@@ -236,7 +249,9 @@ h2,
 }
 .weeklyGoalList small {
   color: var(--muted);
-  font: 600 8px "Courier New", monospace;
+  font:
+    600 8px "Courier New",
+    monospace;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -262,7 +277,9 @@ h2,
 .profileForm label {
   display: block;
   color: var(--muted);
-  font: 600 8px "Courier New", monospace;
+  font:
+    600 8px "Courier New",
+    monospace;
   letter-spacing: 0.1em;
   margin-bottom: 9px;
 }
@@ -313,7 +330,9 @@ h2,
 .archiveVoice b,
 .archiveReport strong {
   color: var(--ink);
-  font: 600 8px "Courier New", monospace;
+  font:
+    600 8px "Courier New",
+    monospace;
   letter-spacing: 0.08em;
 }
 .archiveReport strong {
@@ -332,7 +351,9 @@ h2,
 .storageNote {
   margin: 0;
   color: var(--muted);
-  font: 600 8px "Courier New", monospace;
+  font:
+    600 8px "Courier New",
+    monospace;
   letter-spacing: 0.08em;
   text-align: center;
 }
@@ -374,7 +395,9 @@ h2,
 .ledgerLoading p {
   margin: 10px 0 0;
   color: var(--muted);
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -467,7 +490,9 @@ h2,
   display: flex;
   align-items: flex-start;
   gap: 11px;
-  font: 600 14px "IBM Plex Mono", monospace;
+  font:
+    600 14px "IBM Plex Mono",
+    monospace;
   letter-spacing: 0.13em;
 }
 .authIntro,
@@ -496,7 +521,9 @@ h2,
   align-items: center;
   max-width: 480px;
   margin-top: 42px;
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   letter-spacing: 0.13em;
 }
 .authJourney span {
@@ -579,7 +606,9 @@ h2,
   justify-content: space-between;
   margin-top: 8px;
   color: var(--muted);
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   letter-spacing: 0.07em;
 }
 .durationBlock {
@@ -595,7 +624,9 @@ h2,
   background: transparent;
   color: var(--muted);
   padding: 6px 8px;
-  font: 600 9px "Courier New", monospace;
+  font:
+    600 9px "Courier New",
+    monospace;
   transition:
     color 0.15s ease,
     border-color 0.15s ease,
@@ -887,11 +918,243 @@ dialog::backdrop {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.dayLedger {
+  padding: 42px 0 46px;
+  border-bottom: 1px solid var(--ink);
+}
+.dayLedgerHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+}
+.dayLedgerHeading h2 {
+  font:
+    500 clamp(28px, 4vw, 48px) "Courier New",
+    monospace;
+  letter-spacing: -0.075em;
+  margin: 11px 0 10px;
+}
+.dayLedgerHeading > div:first-child > p:last-child {
+  max-width: 690px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.dayCoverage {
+  width: 138px;
+  height: 92px;
+  flex: none;
+  border: 1px solid var(--ink);
+  display: grid;
+  place-content: center;
+  text-align: center;
+}
+.dayCoverage strong {
+  color: var(--red);
+  font:
+    500 29px "Courier New",
+    monospace;
+  letter-spacing: -0.08em;
+}
+.dayCoverage span {
+  margin-top: 4px;
+  color: var(--muted);
+  font:
+    600 7px "Courier New",
+    monospace;
+  letter-spacing: 0.1em;
+}
+.dayLedgerForm {
+  display: grid;
+  grid-template-columns:
+    minmax(118px, 0.85fr) minmax(200px, 1.3fr) minmax(105px, 0.75fr)
+    minmax(120px, 1fr) minmax(145px, 1.15fr) minmax(155px, 1.25fr) auto;
+  gap: 9px;
+  align-items: end;
+  margin-top: 30px;
+}
+.dayLedgerForm > label,
+.ledgerTime label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.dayLedgerForm label > span,
+.ledgerTime legend,
+.ledgerTime label > span {
+  color: var(--muted);
+  font:
+    600 8px "Courier New",
+    monospace;
+  letter-spacing: 0.1em;
+}
+.dayLedgerForm input,
+.dayLedgerForm select {
+  width: 100%;
+  min-width: 0;
+  height: 43px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 9px;
+  outline: 0;
+  font-size: 12px;
+}
+.dayLedgerForm input:focus,
+.dayLedgerForm select:focus {
+  border-color: var(--red);
+  box-shadow: 2px 2px 0 var(--red);
+}
+.ledgerTime {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr);
+  gap: 5px;
+  align-items: end;
+}
+.ledgerTime legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.ledgerTime i {
+  height: 43px;
+  display: grid;
+  place-items: center;
+  color: var(--red);
+  font-style: normal;
+}
+.ledgerSave {
+  display: grid;
+  gap: 7px;
+  min-width: 122px;
+}
+.ledgerSave > span {
+  color: var(--red);
+  font:
+    600 8px "Courier New",
+    monospace;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+.ledgerSave button {
+  min-height: 43px;
+  white-space: nowrap;
+}
+.ledgerHelp {
+  text-align: right;
+}
+.dayTimeline {
+  margin-top: 33px;
+  border-top: 1px solid var(--ink);
+}
+.dayTimelineHead {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0 10px;
+  font:
+    600 9px "Courier New",
+    monospace;
+  letter-spacing: 0.08em;
+}
+.dayTimelineHead span:last-child {
+  color: var(--muted);
+}
+.dayCoverageTrack {
+  height: 4px;
+  background: var(--line);
+}
+.dayCoverageTrack span {
+  display: block;
+  height: 100%;
+  background: var(--red);
+  transition: width 0.25s ease;
+}
+.dayTimelineRow {
+  display: grid;
+  grid-template-columns: 35px 116px 80px minmax(0, 1fr) 55px;
+  gap: 16px;
+  align-items: start;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--line);
+}
+.dayRowNumber {
+  color: var(--red);
+  font:
+    500 17px "Courier New",
+    monospace;
+}
+.dayTimelineRow time {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--ink);
+  font:
+    600 10px "Courier New",
+    monospace;
+}
+.dayTimelineRow time b {
+  color: var(--red);
+}
+.activityTag {
+  width: fit-content;
+  border: 1px solid var(--ink);
+  padding: 4px 6px;
+  font:
+    600 7px "Courier New",
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.activityStudy {
+  color: var(--paper);
+  border-color: var(--red);
+  background: var(--red);
+}
+.dayTimelineRow strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.dayTimelineRow p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.dayTimelineRow small {
+  color: var(--muted);
+  text-align: right;
+  font:
+    600 9px "Courier New",
+    monospace;
+}
 .quizCard h3 {
   overflow-wrap: anywhere;
 }
 .quizCard {
   gap: 20px;
+}
+@media (max-width: 1000px) and (min-width: 701px) {
+  .dayLedgerForm {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 10px;
+  }
+  .ledgerTime {
+    grid-column: span 2;
+  }
+  .ledgerNote {
+    grid-column: span 2;
+  }
 }
 @media (max-width: 700px) {
   .authShell {
@@ -1046,6 +1309,58 @@ dialog::backdrop {
   }
   .entryForm .primaryButton {
     width: 100%;
+  }
+  .dayLedger {
+    padding: 34px 0 38px;
+  }
+  .dayLedgerHeading {
+    align-items: flex-start;
+    gap: 15px;
+  }
+  .dayLedgerHeading h2 {
+    font-size: 28px;
+  }
+  .dayCoverage {
+    width: 82px;
+    height: 75px;
+  }
+  .dayCoverage strong {
+    font-size: 22px;
+  }
+  .dayLedgerForm {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px 9px;
+    margin-top: 26px;
+  }
+  .ledgerTime,
+  .ledgerNote,
+  .ledgerSave {
+    grid-column: 1 / -1;
+  }
+  .ledgerSave > span,
+  .ledgerHelp {
+    text-align: left;
+  }
+  .ledgerSave button {
+    width: 100%;
+  }
+  .dayTimelineRow {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 8px 11px;
+  }
+  .dayTimelineRow time {
+    grid-column: 2;
+  }
+  .activityTag {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .dayTimelineRow > div {
+    grid-column: 2 / -1;
+  }
+  .dayTimelineRow small {
+    grid-column: 2;
+    text-align: left;
   }
   .recallEmpty {
     padding: 35px 16px;

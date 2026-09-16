@@ -25,9 +25,13 @@ test("social previews expose public Open Graph and X cards", async ({
   const home = await request.get("/");
   expect(home.headers()["permissions-policy"]).toContain("microphone=(self)");
   expect(home.headers()["permissions-policy"]).not.toContain("microphone=()");
-  expect(home.headers()["content-security-policy"]).toContain("media-src 'self' blob:");
+  expect(home.headers()["content-security-policy"]).toContain(
+    "media-src 'self' blob:",
+  );
 });
-test("Neon Auth offers Google and Magic Link without passwords", async ({ page }) => {
+test("Neon Auth offers Google and Magic Link without passwords", async ({
+  page,
+}) => {
   await page.route("**/api/status", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     await route.fulfill({ json: { configured: true, authenticated: false } });
@@ -237,26 +241,37 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
     hasText: "THIS WEEK’S INTENTION",
   });
   await intention.getByRole("button", { name: "RECORD" }).click();
-  await expect(intention.getByRole("button", { name: /STOP 0:00/ })).toBeVisible();
+  await expect(
+    intention.getByRole("button", { name: /STOP 0:00/ }),
+  ).toBeVisible();
   await intention.getByRole("button", { name: /STOP/ }).click();
-  await expect(intention.getByRole("button", { name: /SEAL VOICE NOTE/ })).toBeVisible();
+  await expect(
+    intention.getByRole("button", { name: /SEAL VOICE NOTE/ }),
+  ).toBeVisible();
   await expect(intention.getByText(/0:01/)).toBeVisible();
   await expect(intention.locator("audio")).toHaveCount(1);
-  const playback = await intention.locator("audio").evaluate(async (element) => {
-    const audio = element as HTMLAudioElement;
-    audio.muted = true;
-    await audio.play();
-    const state = { paused: audio.paused, duration: audio.duration };
-    audio.pause();
-    return state;
-  });
+  const playback = await intention
+    .locator("audio")
+    .evaluate(async (element) => {
+      const audio = element as HTMLAudioElement;
+      audio.muted = true;
+      await audio.play();
+      const state = { paused: audio.paused, duration: audio.duration };
+      audio.pause();
+      return state;
+    });
   expect(playback.paused).toBe(false);
   expect(playback.duration).toBeGreaterThan(0);
   await expect(page.locator(".weeklyPriority + .hero")).toHaveCount(1);
   expect(
-    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
   ).toBe(true);
-  await page.screenshot({ path: "test-results/weekly-mobile.png", fullPage: true });
+  await page.screenshot({
+    path: "test-results/weekly-mobile.png",
+    fullPage: true,
+  });
   await page.getByRole("button", { name: "Open settings" }).click();
   await expect(page.getByLabel("DISPLAY NAME")).toHaveValue("Student");
   await expect(page.getByText("student@example.com")).toBeVisible();
@@ -267,6 +282,7 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
 test("ledger, history, delayed quizzes and post-submit explanations at desktop and mobile", async ({
   page,
 }) => {
+  let savedDayRow: Record<string, unknown> | null = null;
   const data = {
     today: "2026-09-13",
     displayName: "Varun",
@@ -312,6 +328,20 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
       },
     ],
     attempts: [],
+    dayEntries: [
+      {
+        id: "550e8400-e29b-41d4-a716-446655440020",
+        date: "2026-09-13",
+        startMinute: 360,
+        endMinute: 420,
+        duration: 60,
+        activity: "Study",
+        subject: "Geography",
+        topic: "Types of soils",
+        note: "Revised the Karnataka map",
+        createdAt: "2026-09-13T02:00:00Z",
+      },
+    ],
     weekly: {
       storageReady: true,
       currentWeekStart: "2026-09-07",
@@ -339,6 +369,8 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
     if (path === "/api/status")
       body = { configured: true, authenticated: true };
     if (path === "/api/data") body = data;
+    if (path === "/api/day-entries")
+      savedDayRow = route.request().postDataJSON();
     if (path === "/api/quiz/start")
       body = {
         id,
@@ -372,12 +404,32 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   await page.setViewportSize({ width: 1440, height: 1100 });
   await page.goto("/");
   await expect(page.getByText("✓ DAY COMPLETE")).toBeVisible();
+  await expect(page.getByText("Geography / Types of soils")).toBeVisible();
+  await expect(page.getByText("60 / 1,440 MIN ACCOUNTED")).toBeVisible();
+  await page.getByLabel("SUBJECT").fill("Mathematics");
+  await page.getByLabel("TOPIC").fill("Percentages");
+  await page.getByLabel("EXTRA NOTE").fill("Solved twenty questions");
+  await page.getByRole("button", { name: "ADD ROW +" }).click();
+  await expect(page.getByText(/Study row sealed/)).toBeVisible();
+  expect(savedDayRow).toMatchObject({
+    date: "2026-09-13",
+    startTime: "09:00",
+    endTime: "10:00",
+    activity: "Study",
+    subject: "Mathematics",
+    topic: "Percentages",
+    note: "Solved twenty questions",
+  });
   const weeklyGoals = page.locator("details.weeklyGoals");
   await expect(weeklyGoals).toBeVisible();
   await expect(weeklyGoals).not.toHaveAttribute("open", "");
-  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeHidden();
+  await expect(
+    weeklyGoals.getByText("Finish types of Indian soils and revise maps"),
+  ).toBeHidden();
   await weeklyGoals.locator("summary").click();
-  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeVisible();
+  await expect(
+    weeklyGoals.getByText("Finish types of Indian soils and revise maps"),
+  ).toBeVisible();
   await page.getByLabel("WHAT DID YOU STUDY?").fill("Indian monsoon patterns");
   await expect(page.getByText("23 / 12,000")).toBeVisible();
   await page.getByRole("button", { name: "90m" }).click();
@@ -404,7 +456,9 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "01 / TODAY" }).click();
   await weeklyGoals.locator("summary").click();
-  await expect(weeklyGoals.getByText("Finish types of Indian soils and revise maps")).toBeVisible();
+  await expect(
+    weeklyGoals.getByText("Finish types of Indian soils and revise maps"),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

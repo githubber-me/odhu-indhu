@@ -108,6 +108,7 @@ The application uses a small number of direct, parameterized SQL queries. There 
 |---|---|
 | `app_users` | Maps a Neon identity to a stable internal user ID and display name |
 | `study_sessions` | Stores immutable raw notes, duration, IST date and processing state |
+| `day_entries` | Stores structured daily time intervals; study rows link atomically to study sessions |
 | `topic_sets` | Stores parsed topics, evidence, generated questions and unlock dates |
 | `quiz_attempts` | Freezes questions for an attempt and records answers and score |
 | `rate_limits` | Applies small database-backed limits to sensitive actions |

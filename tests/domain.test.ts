@@ -21,6 +21,13 @@ import {
   explicitStudyDate,
   quizResearchRequest,
 } from "../lib/study-context";
+import {
+  coveredMinutes,
+  dayEntryInterval,
+  dayEntrySchema,
+  minuteLabel,
+  studyContent,
+} from "../lib/day-ledger";
 test("IST midnight is authoritative regardless of machine timezone", () => {
   assert.equal(istDate(new Date("2026-09-13T18:29:59Z")), "2026-09-13");
   assert.equal(istDate(new Date("2026-09-13T18:30:00Z")), "2026-09-14");
@@ -211,5 +218,48 @@ test("daily news research is anchored to the explicit newspaper date", () => {
     quizResearchRequest("Newspaper", "General", "2026-09-14", "2026-09-18")
       .dailyNews,
     true,
+  );
+});
+test("day ledger calculates intervals and lets midnight close the day", () => {
+  assert.deepEqual(dayEntryInterval("09:15", "10:45"), {
+    startMinute: 555,
+    endMinute: 645,
+    duration: 90,
+  });
+  assert.deepEqual(dayEntryInterval("23:00", "00:00"), {
+    startMinute: 1380,
+    endMinute: 1440,
+    duration: 60,
+  });
+  assert.equal(dayEntryInterval("10:00", "09:00"), null);
+  assert.equal(minuteLabel(1440), "24:00");
+});
+test("day coverage merges overlaps instead of double counting them", () => {
+  assert.equal(
+    coveredMinutes([
+      { startMinute: 60, endMinute: 180 },
+      { startMinute: 120, endMinute: 240 },
+      { startMinute: 300, endMinute: 330 },
+    ]),
+    210,
+  );
+});
+test("study ledger rows require structured study context", () => {
+  const row = {
+    id: "550e8400-e29b-41d4-a716-446655440099",
+    date: "2026-09-16",
+    startTime: "09:00",
+    endTime: "10:00",
+    activity: "Study" as const,
+    subject: "Geography",
+    topic: "Types of soils",
+    note: "Revised the Karnataka map",
+    allowOverlap: false,
+  };
+  assert.equal(dayEntrySchema.safeParse(row).success, true);
+  assert.equal(dayEntrySchema.safeParse({ ...row, topic: "" }).success, false);
+  assert.equal(
+    studyContent(row.subject, row.topic, row.note),
+    "Geography: Types of soils\nRevised the Karnataka map",
   );
 });

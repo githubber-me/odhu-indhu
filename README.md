@@ -9,6 +9,7 @@ Odhu Indhu is a quiet study companion built around one simple practice: write do
 ## What makes it different
 
 - **The streak is the product.** Multiple sessions add up across an IST calendar day. Sixty minutes keeps the streak alive.
+- **The day can be kept whole.** The optional Day Ledger records time intervals for study, work, sleep and the ordinary hours around them. Only study rows affect streaks and recall.
 - **Entries are honest records.** A sealed study note cannot be edited, even directly through the application API.
 - **Recall waits.** It stays hidden until the student has used the app on two different days. A topic studied today opens as a quiz two calendar days later.
 - **Questions begin with evidence.** Parallel finds reliable sources, then Sarvam generates and critiques ten MCQs for every parsed topic.
@@ -19,7 +20,7 @@ Odhu Indhu is a quiet study companion built around one simple practice: write do
 ## The experience
 
 1. Sign in with Google or a passwordless Magic Link.
-2. Write what you studied and enter the time spent.
+2. Use the quick study entry, or map the day with dated time intervals, subjects, topics and notes.
 3. Build the daily streak while questions are prepared quietly in the background.
 4. Return later for Recall, submit the quiz, and review every answer.
 

@@ -27,6 +27,11 @@ import {
 import { startOfIstWeek } from "@/lib/weekly-domain";
 import { weeklyPdf } from "@/lib/weekly-pdf";
 import { recordEvent } from "@/lib/observability";
+import {
+  dayEntryInterval,
+  dayEntrySchema,
+  studyContent,
+} from "@/lib/day-ledger";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -100,7 +105,8 @@ async function handler(request: Request, observation: RequestObservation) {
         level: event.level ?? "error",
         category: "client",
         eventType: event.eventType,
-        outcome: event.outcome ?? (event.level === "info" ? "success" : "error"),
+        outcome:
+          event.outcome ?? (event.level === "info" ? "success" : "error"),
         userId,
         message: event.message,
         errorCode: event.errorCode,
@@ -117,7 +123,10 @@ async function handler(request: Request, observation: RequestObservation) {
         await sql`SELECT id,topic,subject,study_date AS "studyDate",available_on AS "availableOn",jsonb_array_length(questions) AS count,status FROM topic_sets WHERE user_id=${userId} ORDER BY study_date DESC`;
       const attempts =
         await sql`SELECT id,set_id AS "setId",score,jsonb_array_length(questions) AS count,submitted_at AS "submittedAt" FROM quiz_attempts WHERE user_id=${userId} AND submitted_at IS NOT NULL ORDER BY submitted_at DESC`;
-      const recallVisible = new Set(sessions.map((session) => session.date)).size >= 2;
+      const dayEntries =
+        await sql`SELECT id,date,start_minute AS "startMinute",end_minute AS "endMinute",end_minute-start_minute AS duration,activity,subject,topic,note,created_at AS "createdAt" FROM day_entries WHERE user_id=${userId} ORDER BY date DESC,start_minute,created_at`;
+      const recallVisible =
+        new Set(sessions.map((session) => session.date)).size >= 2;
       return json({
         today: istDate(),
         displayName: profiles[0]?.display_name || "Student",
@@ -133,12 +142,16 @@ async function handler(request: Request, observation: RequestObservation) {
             }))
           : [],
         attempts: recallVisible ? attempts : [],
+        dayEntries,
         weekly: await weeklyDashboard(userId),
       });
     }
     if (path === "profile" && method === "POST") {
       if (!(await rateLimit("profile:" + userId, 20, 3600)))
-        return json({ error: "Please wait before changing your profile again." }, 429);
+        return json(
+          { error: "Please wait before changing your profile again." },
+          429,
+        );
       const { displayName } = z
         .object({ displayName: z.string().trim().min(1).max(60) })
         .parse(await request.json());
@@ -147,7 +160,10 @@ async function handler(request: Request, observation: RequestObservation) {
     }
     if (path === "weekly/upload" && method === "POST") {
       if (!process.env.BLOB_READ_WRITE_TOKEN)
-        return json({ error: "Weekly voice storage is not connected yet." }, 503);
+        return json(
+          { error: "Weekly voice storage is not connected yet." },
+          503,
+        );
       const result = await handleUpload({
         request,
         body: await request.json(),
@@ -171,7 +187,8 @@ async function handler(request: Request, observation: RequestObservation) {
             throw new Error("This weekly note is not open yet");
           const existing =
             await sql`SELECT 1 FROM weekly_voice_notes WHERE user_id=${userId} AND week_start=${payload.weekStart} AND kind=${payload.kind}`;
-          if (existing.length) throw new Error("This voice note is already sealed");
+          if (existing.length)
+            throw new Error("This voice note is already sealed");
           return {
             allowedContentTypes: [
               "audio/aac",
@@ -209,11 +226,14 @@ async function handler(request: Request, observation: RequestObservation) {
       if (
         metadata.pathname !== body.pathname ||
         !metadata.pathname.startsWith(`weekly/${body.noteId}/`) ||
-        !metadata.contentType.startsWith("audio/") &&
-          metadata.contentType !== "video/webm" ||
+        (!metadata.contentType.startsWith("audio/") &&
+          metadata.contentType !== "video/webm") ||
         metadata.size > 25 * 1024 * 1024
       )
-        return json({ error: "The uploaded voice note could not be verified." }, 400);
+        return json(
+          { error: "The uploaded voice note could not be verified." },
+          400,
+        );
       const currentWeek = startOfIstWeek(istDate());
       if (
         (body.kind === "plan" && body.weekStart !== currentWeek) ||
@@ -233,7 +253,10 @@ async function handler(request: Request, observation: RequestObservation) {
       return json({ ok: true });
     }
     if (path === "weekly/report" && method === "GET") {
-      const id = z.string().uuid().parse(new URL(request.url).searchParams.get("id"));
+      const id = z
+        .string()
+        .uuid()
+        .parse(new URL(request.url).searchParams.get("id"));
       const rows = await sql`
         SELECT r.metrics,u.display_name
         FROM weekly_reports r JOIN app_users u ON u.id=r.user_id
@@ -250,7 +273,10 @@ async function handler(request: Request, observation: RequestObservation) {
       });
     }
     if (path === "weekly/voice" && method === "GET") {
-      const id = z.string().uuid().parse(new URL(request.url).searchParams.get("id"));
+      const id = z
+        .string()
+        .uuid()
+        .parse(new URL(request.url).searchParams.get("id"));
       const rows =
         await sql`SELECT blob_url FROM weekly_voice_notes WHERE id=${id} AND user_id=${userId}`;
       if (!rows.length) return json({ error: "Voice note not found." }, 404);
@@ -284,6 +310,61 @@ async function handler(request: Request, observation: RequestObservation) {
         );
       after(() => drainWork(body.id));
       return json({ ok: true });
+    }
+    if (path === "day-entries" && method === "POST") {
+      const body = dayEntrySchema.parse(await request.json());
+      if (body.date > istDate())
+        return json(
+          { error: "Future rows belong in a plan, not the day ledger." },
+          400,
+        );
+      if (!(await rateLimit("day-entries:" + userId, 120, 3600)))
+        return json({ error: "Please wait before adding more day rows." }, 429);
+      const interval = dayEntryInterval(body.startTime, body.endTime)!;
+      const existing =
+        await sql`SELECT date,start_minute,end_minute,activity,subject,topic,note FROM day_entries WHERE id=${body.id} AND user_id=${userId}`;
+      if (existing.length) {
+        const saved = existing[0];
+        if (
+          saved.date === body.date &&
+          saved.start_minute === interval.startMinute &&
+          saved.end_minute === interval.endMinute &&
+          saved.activity === body.activity &&
+          saved.subject === body.subject &&
+          saved.topic === body.topic &&
+          saved.note === body.note
+        )
+          return json({ ok: true, duplicate: true });
+        return json(
+          { error: "This row was already sealed. Start a new row." },
+          409,
+        );
+      }
+      const overlaps =
+        await sql`SELECT start_minute,end_minute,activity FROM day_entries WHERE user_id=${userId} AND date=${body.date} AND id<>${body.id} AND start_minute<${interval.endMinute} AND end_minute>${interval.startMinute} ORDER BY start_minute LIMIT 3`;
+      if (overlaps.length && !body.allowOverlap)
+        return json(
+          {
+            error:
+              "This interval overlaps an existing row. Check the time, or choose SAVE OVERLAP to keep both.",
+            overlap: true,
+          },
+          409,
+        );
+      const isStudy = body.activity === "Study";
+      if (isStudy) {
+        const collision =
+          await sql`SELECT 1 FROM study_sessions WHERE id=${body.id}`;
+        if (collision.length)
+          return json({ error: "Please start a fresh ledger row." }, 409);
+      }
+      await sql.begin(async (tx) => {
+        if (isStudy)
+          await tx`INSERT INTO study_sessions(id,user_id,content,duration,date) VALUES(${body.id},${userId},${studyContent(body.subject, body.topic, body.note)},${interval.duration},${body.date})`;
+        await tx`INSERT INTO day_entries(id,user_id,date,start_minute,end_minute,activity,subject,topic,note,study_session_id) VALUES(${body.id},${userId},${body.date},${interval.startMinute},${interval.endMinute},${body.activity},${body.subject},${body.topic},${body.note},${isStudy ? body.id : null})`;
+      });
+      if (isStudy) after(() => drainWork(body.id));
+      return json({ ok: true, duration: interval.duration });
     }
     if (path === "retry" && method === "POST") {
       if (!(await rateLimit("retry:" + userId, 12, 3600)))
@@ -369,6 +450,9 @@ async function handler(request: Request, observation: RequestObservation) {
       else if (type === "attempts")
         rows =
           await sql`SELECT id,set_id,answers,score,submitted_at FROM quiz_attempts WHERE user_id=${userId} AND submitted_at IS NOT NULL`;
+      else if (type === "day-ledger")
+        rows =
+          await sql`SELECT id,date,start_minute,end_minute,end_minute-start_minute AS duration,activity,subject,topic,note,study_session_id,created_at FROM day_entries WHERE user_id=${userId} ORDER BY date,start_minute`;
       else return json({ error: "Unknown export" }, 404);
       return new Response(csv(rows), {
         headers: {
@@ -387,7 +471,8 @@ async function handler(request: Request, observation: RequestObservation) {
       eventType: "api.request.exception",
       outcome: "error",
       userId: observation.userId,
-      message: error instanceof Error ? error.message : "Unhandled API exception",
+      message:
+        error instanceof Error ? error.message : "Unhandled API exception",
       errorCode: error instanceof Error ? error.name : "API_EXCEPTION",
       metadata: {
         path,
@@ -420,6 +505,7 @@ const successMessages: Record<string, string> = {
   "weekly/report": "Weekly PDF report served",
   "weekly/voice": "Private voice note served",
   entries: "Study entry accepted",
+  "day-entries": "Day ledger row accepted",
   retry: "Study processing retry requested",
   work: "Learner processing cycle requested",
   "quiz/start": "Quiz attempt opened",
@@ -433,7 +519,10 @@ function categoryFor(path: string) {
 }
 
 async function observedHandler(request: Request) {
-  const observation: RequestObservation = { userId: null, exceptionLogged: false };
+  const observation: RequestObservation = {
+    userId: null,
+    exceptionLogged: false,
+  };
   const path = new URL(request.url).pathname.slice(5);
   const method = request.method;
   const response = await handler(request, observation);
@@ -442,10 +531,10 @@ async function observedHandler(request: Request) {
     (path.startsWith("exports/") ? "Learner data export served" : null);
 
   if (response.status >= 400 && !observation.exceptionLogged) {
-    const payload = await response
+    const payload = (await response
       .clone()
       .json()
-      .catch(() => null) as { error?: unknown } | null;
+      .catch(() => null)) as { error?: unknown } | null;
     const message =
       typeof payload?.error === "string"
         ? payload.error
