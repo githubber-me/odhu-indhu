@@ -20,7 +20,7 @@ const topicsSchema = z.object({
     .max(20),
 });
 const candidatesSchema = z.object({
-  questions: z.array(questionSchema).max(6),
+  questions: z.array(questionSchema).max(3),
 });
 const critiqueSchema = z.object({
   verdicts: z.array(
@@ -54,7 +54,7 @@ async function model(
         body: JSON.stringify({
           model: modelId,
           temperature: 0.1,
-          max_tokens: 7000,
+          max_tokens: 4096,
           // Sarvam 105B reasons by default. Structured candidate and critique
           // calls disable hidden reasoning to reduce latency and avoid null JSON;
           // the small topic parser explicitly opts into low reasoning.
@@ -236,7 +236,7 @@ export async function processNext(sessionId?: string, userId?: string) {
       });
       const existing: Question[] = set.questions;
       const candidates = await model(
-        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on newsDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on newsDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 6 candidates, excluding the existing stems.",
+        "Create rigorous practice MCQs on the supplied studied topic, supported by the supplied evidence. Match the depth and terminology of the studied material instead of assuming a particular exam or curriculum. Exactly one answer, four distinct options, no all/none-of-above. For maths independently solve step by step. For current affairs, state an explicit month/year or date in the stem and avoid any claim that the evidence does not directly support. When dailyNews is true, every question must concern an event that occurred on or was publicly reported on newsDate; never ask generic questions about newspapers. Cover varied events across India, Karnataka where evidence exists, and the world. Do not present a later development as though it were known on newsDate. The correct field is a zero-based option index. Explain every distractor. Produce up to 3 candidates, excluding the existing stems.",
         {
           topic: set.topic,
           studyDate: set.study_date,

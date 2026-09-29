@@ -9,7 +9,10 @@ const probes = [
     header: "api-subscription-key",
     body: {
       model: process.env.SARVAM_MODEL || "sarvam-105b",
-      max_tokens: 128,
+      max_tokens: 256,
+      ...((process.env.SARVAM_MODEL || "sarvam-105b").startsWith("sarvam-")
+        ? { reasoning_effort: null }
+        : {}),
       response_format: { type: "json_object" },
       ...((process.env.SARVAM_MODEL || "sarvam-105b").startsWith("sarvam-")
         ? {}
