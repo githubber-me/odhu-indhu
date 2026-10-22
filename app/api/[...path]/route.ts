@@ -1,8 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { handleUpload } from "@vercel/blob/client";
-import { get, head } from "@vercel/blob";
+import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { get } from "@vercel/blob";
 import { db, configured } from "@/lib/db";
 import {
   authenticated,
@@ -13,7 +13,6 @@ import {
 import {
   entrySchema,
   istDate,
-  shiftDate,
   publicQuestions,
   Question,
   csv,
@@ -23,15 +22,27 @@ import {
   drainWeeklyWork,
   generateEligibleReports,
   weeklyDashboard,
+  completeWeeklyUpload,
 } from "@/lib/weekly";
-import { startOfIstWeek } from "@/lib/weekly-domain";
+import {
+  MAX_VOICE_BYTES,
+  VOICE_CONTENT_TYPES,
+  voiceNoteOpen,
+  voiceNoteSchema,
+  voicePathMatches,
+} from "@/lib/voice";
+import {
+  handleVoiceUploadCallback,
+  InvalidVoiceCallbackError,
+} from "@/lib/voice-callback";
 import { weeklyPdf } from "@/lib/weekly-pdf";
 import { recordEvent } from "@/lib/observability";
+import { dayEntrySchema } from "@/lib/day-ledger";
+import { saveDayEntry, saveStudyEntry } from "@/lib/entry-store";
 import {
-  dayEntryInterval,
-  dayEntrySchema,
-  studyContent,
-} from "@/lib/day-ledger";
+  ensureDeploymentProgressReports,
+  progressReportForUser,
+} from "@/lib/progress-report";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -43,18 +54,63 @@ async function handler(request: Request, observation: RequestObservation) {
   const path = new URL(request.url).pathname.slice(5),
     method = request.method;
   try {
+    const uploadBody =
+      path === "weekly/upload" && method === "POST"
+        ? ((await request.clone().json()) as HandleUploadBody)
+        : null;
+    const onUploadCompleted: NonNullable<
+      Parameters<typeof handleUpload>[0]["onUploadCompleted"]
+    > = async ({ blob, tokenPayload }) => {
+      const payload = voiceNoteSchema
+        .extend({ userId: z.string().uuid() })
+        .parse(JSON.parse(tokenPayload || "null"));
+      observation.userId = payload.userId;
+      await completeWeeklyUpload(
+        payload.userId,
+        payload,
+        blob.url,
+        blob.pathname,
+      );
+      after(() => drainWeeklyWork(payload.userId));
+    };
+    // Vercel's completion webhook has no browser session or Origin header.
+    // handleUpload verifies its signature before invoking this callback.
+    if (uploadBody?.type === "blob.upload-completed") {
+      if (!process.env.BLOB_READ_WRITE_TOKEN || !process.env.DATABASE_URL)
+        return json(
+          { error: "Weekly voice storage is not connected yet." },
+          503,
+        );
+      try {
+        return json(
+          await handleVoiceUploadCallback(
+            request,
+            uploadBody,
+            onUploadCompleted,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof InvalidVoiceCallbackError)
+          return json({ error: "Invalid upload callback." }, 403);
+        throw error;
+      }
+    }
     if (method === "POST" && !sameOrigin(request))
       return json({ error: "Request origin rejected." }, 403);
     if (path === "status") {
       if (!configured())
         return json({ configured: false, authenticated: false });
       try {
+        await ensureDeploymentProgressReports();
         return json({
           configured: true,
           authenticated: Boolean(await authenticated()),
         });
       } catch {
-        return json({ configured: false, authenticated: false });
+        return json(
+          { error: "Unable to check your session. Please try again." },
+          503,
+        );
       }
     }
     if (!configured())
@@ -62,6 +118,7 @@ async function handler(request: Request, observation: RequestObservation) {
         { error: "Private access is being set up. Please return shortly." },
         503,
       );
+    await ensureDeploymentProgressReports();
     const sql = db();
     if (path === "cron" && method === "GET") {
       if (!cronAuthorized(request)) return json({ error: "Unauthorized" }, 401);
@@ -78,6 +135,20 @@ async function handler(request: Request, observation: RequestObservation) {
     }
     const userId = (observation.userId = await authenticated());
     if (!userId) return json({ error: "Please sign in again." }, 401);
+    const expectedAccount = request.headers.get("x-account-id");
+    if (
+      method === "POST" &&
+      ((["entries", "day-entries", "profile"].includes(path) &&
+        !expectedAccount) ||
+        (expectedAccount && expectedAccount !== userId))
+    )
+      return json(
+        {
+          error: "Your account changed. Reopen your ledger before saving.",
+          code: "ACCOUNT_CHANGED",
+        },
+        409,
+      );
     if (path === "client-event" && method === "POST") {
       if (!(await rateLimit("client-event:" + userId, 180, 3600)))
         return json({ error: "Too many diagnostic events." }, 429);
@@ -128,6 +199,7 @@ async function handler(request: Request, observation: RequestObservation) {
       const recallVisible =
         new Set(sessions.map((session) => session.date)).size >= 2;
       return json({
+        userId,
         today: istDate(),
         displayName: profiles[0]?.display_name || "Student",
         email: profiles[0]?.email || "",
@@ -144,6 +216,7 @@ async function handler(request: Request, observation: RequestObservation) {
         attempts: recallVisible ? attempts : [],
         dayEntries,
         weekly: await weeklyDashboard(userId),
+        progressReport: await progressReportForUser(userId),
       });
     }
     if (path === "profile" && method === "POST") {
@@ -164,91 +237,80 @@ async function handler(request: Request, observation: RequestObservation) {
           { error: "Weekly voice storage is not connected yet." },
           503,
         );
+      if (!(await rateLimit("voice-upload:" + userId, 30, 3600)))
+        return json(
+          { error: "Please wait before uploading more voice notes." },
+          429,
+        );
       const result = await handleUpload({
         request,
-        body: await request.json(),
+        body: uploadBody!,
         onBeforeGenerateToken: async (pathname, clientPayload) => {
-          const payload = z
-            .object({
-              noteId: z.string().uuid(),
-              weekStart: z.string().date(),
-              kind: z.enum(["plan", "reflection"]),
-            })
-            .parse(JSON.parse(clientPayload || "null"));
-          if (!pathname.startsWith(`weekly/${payload.noteId}/`))
+          const payload = voiceNoteSchema.parse(
+            JSON.parse(clientPayload || "null"),
+          );
+          if (!voicePathMatches(pathname, userId, payload))
             throw new Error("Invalid upload path");
-          const currentWeek = startOfIstWeek(istDate());
-          if (
-            (payload.kind === "plan" && payload.weekStart !== currentWeek) ||
-            (payload.kind === "reflection" &&
-              (payload.weekStart > currentWeek ||
-                istDate() < shiftDate(payload.weekStart, 6)))
-          )
+          if (!voiceNoteOpen(payload, istDate()))
             throw new Error("This weekly note is not open yet");
           const existing =
             await sql`SELECT 1 FROM weekly_voice_notes WHERE user_id=${userId} AND week_start=${payload.weekStart} AND kind=${payload.kind}`;
           if (existing.length)
             throw new Error("This voice note is already sealed");
           return {
-            allowedContentTypes: [
-              "audio/aac",
-              "audio/flac",
-              "audio/m4a",
-              "audio/mp4",
-              "audio/mpeg",
-              "audio/ogg",
-              "audio/x-m4a",
-              "audio/x-wav",
-              "audio/vnd.wave",
-              "audio/wav",
-              "audio/webm",
-              "video/webm",
-            ],
-            maximumSizeInBytes: 25 * 1024 * 1024,
+            allowedContentTypes: VOICE_CONTENT_TYPES,
+            maximumSizeInBytes: MAX_VOICE_BYTES,
             addRandomSuffix: true,
+            allowOverwrite: false,
+            validUntil: Date.now() + 15 * 60 * 1000,
             tokenPayload: JSON.stringify({ ...payload, userId }),
           };
         },
+        onUploadCompleted,
       });
       return json(result);
     }
     if (path === "weekly/complete" && method === "POST") {
-      const body = z
-        .object({
-          noteId: z.string().uuid(),
-          weekStart: z.string().date(),
-          kind: z.enum(["plan", "reflection"]),
+      const body = voiceNoteSchema
+        .extend({
           url: z.string().url(),
           pathname: z.string().min(1),
         })
         .parse(await request.json());
-      const metadata = await head(body.url);
-      if (
-        metadata.pathname !== body.pathname ||
-        !metadata.pathname.startsWith(`weekly/${body.noteId}/`) ||
-        (!metadata.contentType.startsWith("audio/") &&
-          metadata.contentType !== "video/webm") ||
-        metadata.size > 25 * 1024 * 1024
-      )
-        return json(
-          { error: "The uploaded voice note could not be verified." },
-          400,
-        );
-      const currentWeek = startOfIstWeek(istDate());
-      if (
-        (body.kind === "plan" && body.weekStart !== currentWeek) ||
-        (body.kind === "reflection" &&
-          (body.weekStart > currentWeek ||
-            istDate() < shiftDate(body.weekStart, 6)))
-      )
-        return json({ error: "This weekly note is not open yet." }, 400);
-      await sql`
-        INSERT INTO weekly_voice_notes(
-          id,user_id,week_start,kind,blob_url,blob_pathname,content_type,size_bytes
-        ) VALUES(
-          ${body.noteId},${userId},${body.weekStart},${body.kind},${body.url},
-          ${metadata.pathname},${metadata.contentType},${metadata.size}
-        ) ON CONFLICT(user_id,week_start,kind) DO NOTHING`;
+      try {
+        await completeWeeklyUpload(userId, body, body.url, body.pathname);
+      } catch (error) {
+        if (error instanceof Error && error.message === "INVALID_VOICE_UPLOAD")
+          return json(
+            { error: "The uploaded voice note could not be verified." },
+            400,
+          );
+        if (error instanceof Error && error.message === "VOICE_ALREADY_SAVED")
+          return json(
+            {
+              error:
+                "A voice note has already been saved for this week. Refresh to see it.",
+            },
+            409,
+          );
+        throw error;
+      }
+      after(() => drainWeeklyWork(userId));
+      return json({ ok: true });
+    }
+    if (path === "weekly/retry" && method === "POST") {
+      if (!(await rateLimit("voice-retry:" + userId, 12, 3600)))
+        return json({ error: "Please allow voice processing to finish." }, 429);
+      const { id } = z
+        .object({ id: z.string().uuid() })
+        .parse(await request.json());
+      const rows = await sql`UPDATE weekly_voice_notes SET
+        status=CASE WHEN transcript IS NOT NULL THEN 'transcribing' ELSE 'queued' END,
+        sarvam_job_id=CASE WHEN transcript IS NOT NULL THEN sarvam_job_id ELSE NULL END,
+        attempts=0,leased_until=NULL,error_code=NULL
+        WHERE id=${id} AND user_id=${userId} AND status='failed' RETURNING id`;
+      if (!rows.length)
+        return json({ error: "A failed voice note was not found." }, 404);
       after(() => drainWeeklyWork(userId));
       return json({ ok: true });
     }
@@ -297,19 +359,10 @@ async function handler(request: Request, observation: RequestObservation) {
       const body = entrySchema.parse(await request.json());
       if (!(await rateLimit("entries:" + userId, 30, 3600)))
         return json({ error: "Please wait before adding more sessions." }, 429);
-      await sql`INSERT INTO study_sessions(id,user_id,content,duration,date) VALUES(${body.id},${userId},${body.content},${body.duration},${istDate()}) ON CONFLICT(id) DO NOTHING`;
-      const saved =
-        await sql`SELECT content,duration FROM study_sessions WHERE id=${body.id} AND user_id=${userId}`;
-      if (
-        saved[0].content !== body.content ||
-        saved[0].duration !== body.duration
-      )
-        return json(
-          { error: "This entry was already saved. Start a new entry." },
-          409,
-        );
-      after(() => drainWork(body.id));
-      return json({ ok: true });
+      const result = await saveStudyEntry(sql, userId, body, istDate());
+      if ("error" in result) return json(result, 409);
+      if (!result.duplicate) after(() => drainWork(body.id));
+      return json(result);
     }
     if (path === "day-entries" && method === "POST") {
       const body = dayEntrySchema.parse(await request.json());
@@ -320,51 +373,11 @@ async function handler(request: Request, observation: RequestObservation) {
         );
       if (!(await rateLimit("day-entries:" + userId, 120, 3600)))
         return json({ error: "Please wait before adding more day rows." }, 429);
-      const interval = dayEntryInterval(body.startTime, body.endTime)!;
-      const existing =
-        await sql`SELECT date,start_minute,end_minute,activity,subject,topic,note FROM day_entries WHERE id=${body.id} AND user_id=${userId}`;
-      if (existing.length) {
-        const saved = existing[0];
-        if (
-          saved.date === body.date &&
-          saved.start_minute === interval.startMinute &&
-          saved.end_minute === interval.endMinute &&
-          saved.activity === body.activity &&
-          saved.subject === body.subject &&
-          saved.topic === body.topic &&
-          saved.note === body.note
-        )
-          return json({ ok: true, duplicate: true });
-        return json(
-          { error: "This row was already sealed. Start a new row." },
-          409,
-        );
-      }
-      const overlaps =
-        await sql`SELECT start_minute,end_minute,activity FROM day_entries WHERE user_id=${userId} AND date=${body.date} AND id<>${body.id} AND start_minute<${interval.endMinute} AND end_minute>${interval.startMinute} ORDER BY start_minute LIMIT 3`;
-      if (overlaps.length && !body.allowOverlap)
-        return json(
-          {
-            error:
-              "This interval overlaps an existing row. Check the time, or choose SAVE OVERLAP to keep both.",
-            overlap: true,
-          },
-          409,
-        );
-      const isStudy = body.activity === "Study";
-      if (isStudy) {
-        const collision =
-          await sql`SELECT 1 FROM study_sessions WHERE id=${body.id}`;
-        if (collision.length)
-          return json({ error: "Please start a fresh ledger row." }, 409);
-      }
-      await sql.begin(async (tx) => {
-        if (isStudy)
-          await tx`INSERT INTO study_sessions(id,user_id,content,duration,date) VALUES(${body.id},${userId},${studyContent(body.subject, body.topic, body.note)},${interval.duration},${body.date})`;
-        await tx`INSERT INTO day_entries(id,user_id,date,start_minute,end_minute,activity,subject,topic,note,study_session_id) VALUES(${body.id},${userId},${body.date},${interval.startMinute},${interval.endMinute},${body.activity},${body.subject},${body.topic},${body.note},${isStudy ? body.id : null})`;
-      });
-      if (isStudy) after(() => drainWork(body.id));
-      return json({ ok: true, duration: interval.duration });
+      const result = await saveDayEntry(sql, userId, body);
+      if ("error" in result) return json(result, 409);
+      if (body.activity === "Study" && !result.duplicate)
+        after(() => drainWork(body.id));
+      return json(result);
     }
     if (path === "retry" && method === "POST") {
       if (!(await rateLimit("retry:" + userId, 12, 3600)))
@@ -502,6 +515,7 @@ const successMessages: Record<string, string> = {
   "weekly/cron": "Weekly processing cycle completed",
   "weekly/upload": "Private voice upload authorised",
   "weekly/complete": "Private voice upload verified",
+  "weekly/retry": "Saved voice note processing restarted",
   "weekly/report": "Weekly PDF report served",
   "weekly/voice": "Private voice note served",
   entries: "Study entry accepted",

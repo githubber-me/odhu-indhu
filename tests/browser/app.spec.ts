@@ -85,6 +85,7 @@ test("Recall stays hidden until study has been logged on two IST days", async ({
       return route.fulfill({
         json: {
           today: "2026-09-13",
+          userId: id,
           displayName: "Varun",
           recallVisible: false,
           sessions: [
@@ -198,6 +199,7 @@ test("weekly report and voice rituals lead the signed-in mobile view", async ({
       return route.fulfill({
         json: {
           today: "2026-09-13",
+          userId: id,
           displayName: "Student",
           email: "student@example.com",
           recallVisible: false,
@@ -285,6 +287,7 @@ test("ledger, history, delayed quizzes and post-submit explanations at desktop a
   let savedDayRow: Record<string, unknown> | null = null;
   const data = {
     today: "2026-09-13",
+    userId: id,
     displayName: "Varun",
     recallVisible: true,
     sessions: [

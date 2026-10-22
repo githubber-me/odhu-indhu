@@ -16,6 +16,7 @@ Odhu Indhu is a quiet study companion built around one simple practice: write do
 - **The interface has its own voice.** Forty Kannada and English messages rotate daily without repeating inside a cycle.
 - **Answers stay private until submission.** The review then explains the right answer, every distractor, and the sources used.
 - **Weeks have a beginning and an ending.** Private voice notes hold the learner's Monday intention and Sunday reflection. The following Monday turns sealed work into a deterministic PDF report.
+- **Progress is kept.** This release gives existing users a saved study and recall report at the top of home, excluding voice notes.
 
 ## The experience
 

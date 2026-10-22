@@ -114,14 +114,26 @@ The application uses a small number of direct, parameterized SQL queries. There 
 | `rate_limits` | Applies small database-backed limits to sensitive actions |
 | `weekly_voice_notes` | Stores private audio references, transcripts and one-time structured elements |
 | `weekly_reports` | Stores deterministic weekly metrics and PDF download state |
+| `progress_report_campaigns` | Freezes the release cutoff for the existing-user progress report |
+| `progress_reports` | Stores each existing user's study and recall snapshot, without voice data |
 
-Every study session, topic set and attempt carries `user_id`. Each Neon identity receives an independent application account. A compatibility path can still attach a legacy unclaimed record to its first authenticated owner, preserving data from installations that existed before authentication.
+Every study session, topic set and attempt carries `user_id`. Each Neon identity receives an independent application account. To recover a pre-authentication ledger, an administrator can set `LEGACY_OWNER_AUTH_SUBJECT` to its verified owner's Neon subject. An arbitrary first sign-in cannot claim that history. Already-linked accounts retain their existing mappings.
 
 ## Authentication and security
 
 Neon Auth owns identity, Google OAuth, Magic Link delivery and session cookies. Email and password credentials are disabled. The application stores only the Neon subject mapping required to associate product data with a user.
 
 Sign-in is embedded on `/`. The legacy `/auth/sign-in` location redirects home. Google and Magic Link still need `/auth/callback` as a technical return route. Next.js Proxy completes Neon's verifier exchange and creates the signed session cookie, preventing the callback loop that occurs when OAuth returns without middleware.
+
+Successful sign-in rechecks access and loads the ledger immediately. Sign-out is available in Settings and at `/auth/sign-out`; a failed sign-out keeps the account visible and offers a retry. Session changes clear private UI state and microphone capture. Study and day-ledger drafts are scoped to the application user, and submission IDs survive reloads so an uncertain save can be retried without duplicating study time.
+
+### Deployment progress report
+
+The first production API request after this release captures a one-time progress report for every application account already present. It freezes study minutes, study days, streaks, topics and completed recall at that instant. Voice notes, weekly intentions, reflections and voice-derived goals are excluded. Each user sees only their own report at the top of the home page.
+
+The report uses a fixed release key and persists across redeployments. Later work does not change it, and later accounts do not receive a retroactive report. Production initializes its two additive report tables automatically in the same transaction as the snapshot, before creating an application account for the request. Preview and development requests do not create or serve production reports. No email is sent.
+
+Voice recordings use account-bound private upload paths. Signed storage completion callbacks can seal a successful upload even when its browser response is lost. A final-save retry reuses the uploaded audio; transcription failures offer a separate retry using the saved recording. Audio remains saved if transcription or goal extraction is temporarily unavailable.
 
 Other safeguards include:
 

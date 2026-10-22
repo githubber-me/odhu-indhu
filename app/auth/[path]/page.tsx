@@ -2,6 +2,7 @@ import { AuthView } from "@neondatabase/auth-ui";
 import { authViewPaths } from "@neondatabase/auth-ui/server";
 import { Mark } from "@/app/mark";
 import { AuthIntro } from "@/app/auth/auth-intro";
+import { SignOut } from "@/app/auth/sign-out";
 
 export const dynamicParams = false;
 
@@ -23,7 +24,15 @@ export default async function AuthPage({
       </header>
       <AuthIntro />
       <section className="authPanel">
-        <AuthView path={path} />
+        {path === "sign-out" ? (
+          <SignOut />
+        ) : (
+          <AuthView
+            path={path}
+            callbackURL="/auth/callback?redirectTo=/"
+            redirectTo="/"
+          />
+        )}
       </section>
     </main>
   );

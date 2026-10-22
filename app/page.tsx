@@ -1,7 +1,7 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { istDate, shiftDate, streakStats, Question } from "@/lib/domain";
-import { authClient } from "@/lib/auth-client";
+import { AUTH_SESSION_CHANGED, signOut } from "@/lib/auth-client";
 import { Mark } from "@/app/mark";
 import { AuthIntro } from "@/app/auth/auth-intro";
 import { AuthView } from "@neondatabase/auth-ui";
@@ -11,6 +11,13 @@ import { weekLabel } from "@/lib/weekly-domain";
 import { reportClientIssue } from "@/lib/client-observability";
 import { DayLedger } from "@/app/day-ledger";
 import { DayEntry } from "@/lib/day-ledger";
+import {
+  entryDraftKey,
+  readEntryDraft,
+  writeEntryDraft,
+} from "@/lib/entry-draft";
+import { ProgressReport } from "@/app/progress-report";
+import type { ProgressReport as SavedProgressReport } from "@/lib/progress-report-domain";
 type Session = {
   id: string;
   date: string;
@@ -30,6 +37,7 @@ type SetInfo = {
   locked: boolean;
 };
 type Data = {
+  userId: string;
   today: string;
   displayName: string;
   email: string;
@@ -39,6 +47,7 @@ type Data = {
   attempts: { id: string; setId: string; score: number; count: number }[];
   dayEntries: DayEntry[];
   weekly: WeeklyState;
+  progressReport: SavedProgressReport | null;
 };
 type Quiz = {
   id: string;
@@ -46,19 +55,18 @@ type Quiz = {
   questions: { stem: string; options: string[] }[];
 };
 type Review = { score: number; answers: number[]; questions: Question[] };
-function label(d: string) {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-    timeZone: "Asia/Kolkata",
-  }).format(new Date(d + "T12:00:00+05:30"));
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
 }
-export default function Home() {
-  const [gate, setGate] = useState<"loading" | "setup" | "login" | "open">(
-    "loading",
-  );
-  const [data, setData] = useState<Data>({
+class SessionChangedError extends Error {}
+function emptyData(): Data {
+  return {
+    userId: "",
     today: istDate(),
     displayName: "",
     email: "",
@@ -67,6 +75,7 @@ export default function Home() {
     sets: [],
     attempts: [],
     dayEntries: [],
+    progressReport: null,
     weekly: {
       storageReady: false,
       currentWeekStart: "",
@@ -76,7 +85,21 @@ export default function Home() {
       reports: [],
       voiceNotes: [],
     },
-  });
+  };
+}
+function label(d: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+    weekday: "short",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date(d + "T12:00:00+05:30"));
+}
+export default function Home() {
+  const [gate, setGate] = useState<
+    "loading" | "setup" | "login" | "open" | "error"
+  >("loading");
+  const [data, setData] = useState<Data>(emptyData);
   const [tab, setTab] = useState<"today" | "history" | "quizzes">("today");
   const [content, setContent] = useState(""),
     [duration, setDuration] = useState(60);
@@ -89,52 +112,147 @@ export default function Home() {
   const [settings, setSettings] = useState(false),
     [legacy, setLegacy] = useState(false),
     [profileName, setProfileName] = useState("");
+  const [signOutError, setSignOutError] = useState("");
+  const [checkingAccess, setCheckingAccess] = useState(false);
   const entryId = useRef<string | null>(null),
     studyField = useRef<HTMLTextAreaElement>(null),
-    draftLoaded = useRef(false),
+    currentUserId = useRef<string | null>(null),
+    sessionEpoch = useRef(0),
+    sessionCheck = useRef(0),
+    savingEntry = useRef(false),
     dialog = useRef<HTMLDialogElement>(null);
-  const api = useCallback(async (path: string, body?: unknown) => {
-    const response = await fetch("/api/" + path, {
-      method: body === undefined ? "GET" : "POST",
-      headers: body === undefined ? {} : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store",
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      if (response.status === 401) setGate("login");
-      throw new Error(result.error || "Please try again.");
-    }
-    return result;
+  const clearPrivateState = useCallback(() => {
+    sessionEpoch.current += 1;
+    currentUserId.current = null;
+    entryId.current = null;
+    savingEntry.current = false;
+    setData(emptyData());
+    setContent("");
+    setDuration(60);
+    setTab("today");
+    setSelectedDate("");
+    setQuiz(null);
+    setAnswers([]);
+    setReview(null);
+    setSettings(false);
+    setProfileName("");
+    setNotice("");
+    setSignOutError("");
+    setCheckingAccess(false);
+    setBusy(false);
   }, []);
-  const reload = useCallback(async () => setData(await api("data")), [api]);
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem("odhu-indhu-entry-draft");
-      if (saved) {
-        const draft = JSON.parse(saved);
-        if (typeof draft.content === "string") setContent(draft.content);
-        if (
-          Number.isInteger(draft.duration) &&
-          draft.duration >= 1 &&
-          draft.duration <= 720
-        )
-          setDuration(draft.duration);
-      }
-    } catch {}
-    draftLoaded.current = true;
-  }, []);
-  useEffect(() => {
-    if (!draftLoaded.current) return;
-    try {
-      if (content)
-        sessionStorage.setItem(
-          "odhu-indhu-entry-draft",
-          JSON.stringify({ content, duration }),
+  const api = useCallback(
+    async (path: string, body?: unknown) => {
+      const epoch = sessionEpoch.current;
+      const response = await fetch("/api/" + path, {
+        method: body === undefined ? "GET" : "POST",
+        headers:
+          body === undefined
+            ? {}
+            : {
+                "content-type": "application/json",
+                ...(currentUserId.current
+                  ? { "X-Account-ID": currentUserId.current }
+                  : {}),
+              },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (epoch !== sessionEpoch.current) throw new SessionChangedError();
+      if (!response.ok) {
+        if (response.status === 409 && result.code === "ACCOUNT_CHANGED") {
+          window.dispatchEvent(new Event(AUTH_SESSION_CHANGED));
+          throw new SessionChangedError();
+        }
+        if (response.status === 401) {
+          clearPrivateState();
+          setGate("login");
+        }
+        throw new ApiError(
+          result.error || "Please try again.",
+          response.status,
         );
-      else sessionStorage.removeItem("odhu-indhu-entry-draft");
+      }
+      return result;
+    },
+    [clearPrivateState],
+  );
+  const reload = useCallback(async () => {
+    const result: Data = await api("data");
+    if (!result.userId)
+      throw new Error("Unable to open your account. Please try again.");
+    if (result.userId !== currentUserId.current) {
+      clearPrivateState();
+      currentUserId.current = result.userId;
+      try {
+        // An old unscoped draft has no provable owner and cannot be restored.
+        sessionStorage.removeItem("odhu-indhu-entry-draft");
+        const draft = readEntryDraft(sessionStorage, result.userId);
+        if (draft) {
+          setContent(draft.content);
+          setDuration(draft.duration);
+          entryId.current = draft.id;
+        }
+      } catch {}
+    }
+    setData(result);
+  }, [api, clearPrivateState]);
+  useEffect(() => {
+    if (gate !== "open" || !currentUserId.current) return;
+    try {
+      writeEntryDraft(sessionStorage, currentUserId.current, {
+        content,
+        duration,
+        id: entryId.current,
+      });
     } catch {}
-  }, [content, duration]);
+  }, [content, duration, gate]);
+  const checkAccess = useCallback(
+    async (opening: Promise<unknown> = Promise.resolve()) => {
+      const check = ++sessionCheck.current;
+      setCheckingAccess(true);
+      try {
+        const [state] = await Promise.all([api("status"), opening]);
+        if (check !== sessionCheck.current) return;
+        if (!state.configured) {
+          clearPrivateState();
+          setGate("setup");
+        } else if (!state.authenticated) {
+          clearPrivateState();
+          setGate("login");
+        } else {
+          await reload();
+          if (check !== sessionCheck.current) return;
+          try {
+            localStorage.setItem("odhu-indhu-has-entered", "1");
+          } catch {}
+          setGate("open");
+        }
+      } catch (error) {
+        if (
+          check !== sessionCheck.current ||
+          error instanceof SessionChangedError
+        )
+          return;
+        if (error instanceof ApiError && error.status === 401) return;
+        if (currentUserId.current) {
+          setNotice(
+            "Unable to refresh your session. Your unsaved work is still here. Please try again when the connection returns.",
+          );
+          return;
+        }
+        clearPrivateState();
+        setNotice(
+          (error as Error).message || "Unable to connect. Please try again.",
+        );
+        setGate("error");
+      } finally {
+        if (check === sessionCheck.current) setCheckingAccess(false);
+      }
+    },
+    [api, reload, clearPrivateState],
+  );
   useEffect(() => {
     const field = studyField.current;
     if (!field) return;
@@ -152,22 +270,7 @@ export default function Home() {
     const opening = playOpening
       ? new Promise((resolve) => setTimeout(resolve, 2400))
       : Promise.resolve();
-    Promise.all([api("status"), opening])
-      .then(async ([state]) => {
-        if (!state.configured) setGate("setup");
-        else if (!state.authenticated) setGate("login");
-        else {
-          await reload();
-          try {
-            localStorage.setItem("odhu-indhu-has-entered", "1");
-          } catch {}
-          setGate("open");
-        }
-      })
-      .catch(() => {
-        setNotice("Unable to connect. Please refresh to try again.");
-        setGate("login");
-      });
+    void checkAccess(opening);
     try {
       setLegacy(
         Boolean(
@@ -176,7 +279,29 @@ export default function Home() {
         ),
       );
     } catch {}
-  }, [api, reload]);
+  }, [checkAccess]);
+  useEffect(() => {
+    const changed = () => {
+      clearPrivateState();
+      setGate("loading");
+      void checkAccess();
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        setCheckingAccess(true);
+        void checkAccess();
+      }
+    };
+    window.addEventListener(AUTH_SESSION_CHANGED, changed);
+    window.addEventListener("focus", visible);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      sessionCheck.current += 1;
+      window.removeEventListener(AUTH_SESSION_CHANGED, changed);
+      window.removeEventListener("focus", visible);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [checkAccess, clearPrivateState]);
   useEffect(() => {
     if (gate !== "open") return;
     const tick = () => {
@@ -199,23 +324,44 @@ export default function Home() {
     hero = dailyHero(data.today);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (savingEntry.current || !currentUserId.current) return;
+    savingEntry.current = true;
+    const epoch = sessionEpoch.current;
     setBusy(true);
     setNotice("");
     entryId.current ??= crypto.randomUUID();
+    try {
+      writeEntryDraft(sessionStorage, currentUserId.current, {
+        content,
+        duration,
+        id: entryId.current,
+      });
+    } catch {}
     try {
       await api("entries", { id: entryId.current, content, duration });
       entryId.current = null;
       setContent("");
       setDuration(60);
       try {
-        sessionStorage.removeItem("odhu-indhu-entry-draft");
+        sessionStorage.removeItem(entryDraftKey(currentUserId.current!));
       } catch {}
-      await reload();
-      setNotice("Entry sealed. A little more knowledge, kept.");
+      try {
+        await reload();
+        setNotice("Entry sealed. A little more knowledge, kept.");
+      } catch (error) {
+        if (
+          !(error instanceof SessionChangedError) &&
+          sessionEpoch.current === epoch
+        )
+          setNotice("Entry sealed. Refresh to update your ledger.");
+      }
     } catch (e) {
-      setNotice((e as Error).message);
+      if (sessionEpoch.current === epoch) setNotice((e as Error).message);
     } finally {
-      setBusy(false);
+      if (sessionEpoch.current === epoch) {
+        savingEntry.current = false;
+        setBusy(false);
+      }
     }
   }
   async function start(set: SetInfo) {
@@ -303,6 +449,7 @@ export default function Home() {
           {gate === "open" && (
             <button
               className="iconButton"
+              disabled={checkingAccess}
               onClick={() => setSettings(true)}
               aria-label="Open settings"
             >
@@ -311,7 +458,25 @@ export default function Home() {
           )}
         </div>
       </header>
-      {gate === "login" ? (
+      {gate === "error" ? (
+        <section className="welcome">
+          <h1>
+            Unable to open your <em>ledger.</em>
+          </h1>
+          <p className="notice" role="alert">
+            {notice}
+          </p>
+          <button
+            className="outlineButton"
+            onClick={() => {
+              setGate("loading");
+              void checkAccess();
+            }}
+          >
+            TRY AGAIN
+          </button>
+        </section>
+      ) : gate === "login" ? (
         <section className="inlineAuth">
           <AuthIntro />
           <section className="authPanel">
@@ -370,8 +535,15 @@ export default function Home() {
           )}
         </section>
       ) : gate === "open" ? (
-        <>
+        <div
+          inert={checkingAccess || undefined}
+          style={{ display: "contents" }}
+          aria-busy={checkingAccess}
+        >
+          <ProgressReport report={data.progressReport} />
           <WeeklyRitual
+            key={data.userId}
+            userId={data.userId}
             weekly={data.weekly}
             onChanged={reload}
             onNotice={setNotice}
@@ -484,12 +656,14 @@ export default function Home() {
                 </p>
               </section>
               <DayLedger
+                key={data.userId}
+                userId={data.userId}
                 today={data.today}
                 entries={data.dayEntries || []}
                 onNotice={setNotice}
                 onSave={async (entry) => {
                   await api("day-entries", entry);
-                  await reload();
+                  await reload().catch(() => {});
                 }}
               />
               <form className="entryForm" onSubmit={submit}>
@@ -502,6 +676,7 @@ export default function Home() {
                   id="study"
                   ref={studyField}
                   required
+                  disabled={busy}
                   minLength={3}
                   maxLength={12000}
                   value={content}
@@ -531,6 +706,7 @@ export default function Home() {
                           id="duration"
                           type="number"
                           required
+                          disabled={busy}
                           min={1}
                           max={720}
                           step={1}
@@ -550,6 +726,7 @@ export default function Home() {
                       {[30, 45, 60, 90, 120].map((minutes) => (
                         <button
                           type="button"
+                          disabled={busy}
                           key={minutes}
                           aria-pressed={duration === minutes}
                           onClick={() => {
@@ -907,6 +1084,8 @@ export default function Home() {
           <dialog
             ref={dialog}
             className="modal"
+            inert={checkingAccess || undefined}
+            aria-busy={checkingAccess}
             onCancel={() => setSettings(false)}
           >
             <button
@@ -1016,21 +1195,31 @@ export default function Home() {
                 Download entries from the previous browser ledger
               </button>
             )}
+            {signOutError && (
+              <p className="notice" role="alert">
+                {signOutError}
+              </p>
+            )}
             <button
               className="outlineButton"
+              disabled={busy}
               onClick={async () => {
+                setBusy(true);
+                setSignOutError("");
                 try {
-                  await authClient.signOut();
-                  window.location.assign("/auth/sign-in");
+                  await signOut();
+                  clearPrivateState();
+                  window.location.replace("/");
                 } catch (e) {
-                  setNotice((e as Error).message);
+                  setSignOutError((e as Error).message);
+                  setBusy(false);
                 }
               }}
             >
               SIGN OUT
             </button>
           </dialog>
-        </>
+        </div>
       ) : null}
       <footer className="footer">
         <span>ಓದು ಇಂದು</span>

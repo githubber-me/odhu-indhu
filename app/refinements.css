@@ -47,6 +47,60 @@ h2,
 .weeklyPriority {
   border-bottom: 1px solid var(--ink);
 }
+.releaseProgress {
+  padding: 28px 0;
+  border-bottom: 1px solid var(--ink);
+}
+.releaseProgressHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.releaseProgressHeading h2 {
+  font-size: clamp(23px, 3vw, 34px);
+  margin: 8px 0;
+}
+.releaseProgressSummary {
+  max-width: 740px;
+  line-height: 1.6;
+}
+.releaseProgressMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.releaseProgressMetrics dt {
+  font:
+    10px "Courier New",
+    monospace;
+  color: var(--muted);
+}
+.releaseProgressMetrics dd {
+  font:
+    600 clamp(20px, 3vw, 30px) "Courier New",
+    monospace;
+  margin: 9px 0 0;
+}
+.releaseProgressFootnote {
+  margin-bottom: 0;
+}
+.ledgerFields {
+  display: contents;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .releaseProgressMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .weeklyAction {
   min-height: 206px;
   padding: 30px 0;

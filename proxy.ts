@@ -7,8 +7,14 @@ const neonAuthProxy = auth.middleware({ loginUrl: "/" });
 export function proxy(request: NextRequest) {
   // Keep old bookmarks out of a second sign-in page. OAuth and Magic Link
   // callbacks still use /auth/* so Neon can complete their verifier exchange.
-  if (request.nextUrl.pathname === "/auth/sign-in")
-    return NextResponse.redirect(new URL("/", request.url));
+  if (request.nextUrl.pathname === "/auth/sign-in") {
+    const home = request.nextUrl.clone();
+    home.pathname = "/";
+    return NextResponse.redirect(home);
+  }
+  // Signing out must remain reachable when a session has already expired or
+  // its provider cannot currently validate it. The action checks its result.
+  if (request.nextUrl.pathname === "/auth/sign-out") return NextResponse.next();
   return neonAuthProxy(request);
 }
 

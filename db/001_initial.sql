@@ -123,3 +123,16 @@ $$;
 DROP TRIGGER IF EXISTS immutable_study_entry ON study_sessions;
 CREATE TRIGGER immutable_study_entry BEFORE UPDATE ON study_sessions
 FOR EACH ROW EXECUTE FUNCTION preserve_study_entry();
+CREATE TABLE IF NOT EXISTS progress_report_campaigns (
+ id text PRIMARY KEY,
+ cutoff_at timestamptz NOT NULL,
+ cutoff_date text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS progress_reports (
+ campaign_id text NOT NULL REFERENCES progress_report_campaigns(id),
+ user_id uuid NOT NULL REFERENCES app_users(id),
+ snapshot jsonb NOT NULL,
+ generated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(campaign_id,user_id)
+);

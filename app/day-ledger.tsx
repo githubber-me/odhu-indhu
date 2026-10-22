@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   coveredMinutes,
   DAY_ACTIVITIES,
@@ -23,11 +23,13 @@ type DayEntryPayload = {
 };
 
 export function DayLedger({
+  userId,
   today,
   entries,
   onSave,
   onNotice,
 }: {
+  userId: string;
   today: string;
   entries: DayEntry[];
   onSave: (entry: DayEntryPayload) => Promise<void>;
@@ -42,7 +44,10 @@ export function DayLedger({
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmOverlap, setConfirmOverlap] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
   const entryId = useRef<string | null>(null);
+  const submitting = useRef(false);
+  const draftKey = `odhu-indhu-day-draft:${userId}`;
   const interval = dayEntryInterval(startTime, endTime);
   const selectedEntries = useMemo(
     () =>
@@ -54,6 +59,76 @@ export function DayLedger({
   const covered = coveredMinutes(selectedEntries);
   const isStudy = activity === "Study";
 
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(draftKey);
+      if (saved) {
+        const draft = JSON.parse(saved);
+        if (
+          typeof draft.date === "string" &&
+          /^\d{4}-\d{2}-\d{2}$/.test(draft.date) &&
+          draft.date <= today
+        )
+          setDate(draft.date);
+        if (
+          typeof draft.startTime === "string" &&
+          /^([01]\d|2[0-3]):[0-5]\d$/.test(draft.startTime)
+        )
+          setStartTime(draft.startTime);
+        if (
+          typeof draft.endTime === "string" &&
+          /^([01]\d|2[0-3]):[0-5]\d$/.test(draft.endTime)
+        )
+          setEndTime(draft.endTime);
+        if (DAY_ACTIVITIES.includes(draft.activity))
+          setActivity(draft.activity);
+        if (typeof draft.subject === "string")
+          setSubject(draft.subject.slice(0, 100));
+        if (typeof draft.topic === "string")
+          setTopic(draft.topic.slice(0, 200));
+        if (typeof draft.note === "string") setNote(draft.note.slice(0, 2000));
+        if (
+          typeof draft.id === "string" &&
+          /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(
+            draft.id,
+          )
+        )
+          entryId.current = draft.id;
+      }
+    } catch {}
+    setDraftReady(true);
+  }, [draftKey, today]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      sessionStorage.setItem(
+        draftKey,
+        JSON.stringify({
+          id: entryId.current,
+          date,
+          startTime,
+          endTime,
+          activity,
+          subject,
+          topic,
+          note,
+        }),
+      );
+    } catch {}
+  }, [
+    draftReady,
+    draftKey,
+    date,
+    startTime,
+    endTime,
+    activity,
+    subject,
+    topic,
+    note,
+    saving,
+  ]);
+
   function changed() {
     entryId.current = null;
     setConfirmOverlap(false);
@@ -61,7 +136,8 @@ export function DayLedger({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!interval) return;
+    if (!interval || submitting.current || !draftReady) return;
+    submitting.current = true;
     setSaving(true);
     onNotice("");
     entryId.current ??= crypto.randomUUID();
@@ -107,6 +183,7 @@ export function DayLedger({
       if (/overlap/i.test(message)) setConfirmOverlap(true);
       onNotice(message);
     } finally {
+      submitting.current = false;
       setSaving(false);
     }
   }
@@ -134,113 +211,119 @@ export function DayLedger({
       </div>
 
       <form className="dayLedgerForm" onSubmit={submit}>
-        <label>
-          <span>DATE</span>
-          <input
-            type="date"
-            required
-            max={today}
-            value={date}
-            onChange={(event) => {
-              setDate(event.target.value);
-              changed();
-            }}
-          />
-        </label>
-        <fieldset className="ledgerTime">
-          <legend>TIME INTERVAL</legend>
+        <fieldset className="ledgerFields" disabled={saving || !draftReady}>
           <label>
-            <span>FROM</span>
+            <span>DATE</span>
             <input
-              type="time"
+              type="date"
               required
-              value={startTime}
+              max={today}
+              value={date}
               onChange={(event) => {
-                setStartTime(event.target.value);
+                setDate(event.target.value);
                 changed();
               }}
             />
           </label>
-          <i aria-hidden="true">→</i>
+          <fieldset className="ledgerTime">
+            <legend>TIME INTERVAL</legend>
+            <label>
+              <span>FROM</span>
+              <input
+                type="time"
+                required
+                value={startTime}
+                onChange={(event) => {
+                  setStartTime(event.target.value);
+                  changed();
+                }}
+              />
+            </label>
+            <i aria-hidden="true">→</i>
+            <label>
+              <span>TO</span>
+              <input
+                type="time"
+                required
+                value={endTime}
+                onChange={(event) => {
+                  setEndTime(event.target.value);
+                  changed();
+                }}
+              />
+            </label>
+          </fieldset>
           <label>
-            <span>TO</span>
-            <input
-              type="time"
-              required
-              value={endTime}
+            <span>ACTIVITY</span>
+            <select
+              value={activity}
               onChange={(event) => {
-                setEndTime(event.target.value);
+                setActivity(event.target.value as DayActivity);
+                changed();
+              }}
+            >
+              {DAY_ACTIVITIES.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{isStudy ? "SUBJECT" : "AREA / SUBJECT"}</span>
+            <input
+              required={isStudy}
+              maxLength={100}
+              value={subject}
+              placeholder={isStudy ? "Geography" : "Optional"}
+              onChange={(event) => {
+                setSubject(event.target.value);
                 changed();
               }}
             />
           </label>
+          <label>
+            <span>{isStudy ? "TOPIC" : "WHAT?"}</span>
+            <input
+              required={isStudy}
+              maxLength={200}
+              value={topic}
+              placeholder={isStudy ? "Types of soils" : "What were you doing?"}
+              onChange={(event) => {
+                setTopic(event.target.value);
+                changed();
+              }}
+            />
+          </label>
+          <label className="ledgerNote">
+            <span>EXTRA NOTE</span>
+            <input
+              maxLength={2000}
+              value={note}
+              placeholder="Anything worth remembering"
+              onChange={(event) => {
+                setNote(event.target.value);
+                changed();
+              }}
+            />
+          </label>
+          <div className="ledgerSave">
+            <span>{interval ? `${interval.duration} MIN` : "CHECK TIME"}</span>
+            <button
+              className={confirmOverlap ? "outlineButton" : "primaryButton"}
+              disabled={
+                saving ||
+                !interval ||
+                date > today ||
+                (isStudy && (!subject.trim() || !topic.trim()))
+              }
+            >
+              {saving
+                ? "SAVING…"
+                : confirmOverlap
+                  ? "SAVE OVERLAP"
+                  : "ADD ROW +"}
+            </button>
+          </div>
         </fieldset>
-        <label>
-          <span>ACTIVITY</span>
-          <select
-            value={activity}
-            onChange={(event) => {
-              setActivity(event.target.value as DayActivity);
-              changed();
-            }}
-          >
-            {DAY_ACTIVITIES.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>{isStudy ? "SUBJECT" : "AREA / SUBJECT"}</span>
-          <input
-            required={isStudy}
-            maxLength={100}
-            value={subject}
-            placeholder={isStudy ? "Geography" : "Optional"}
-            onChange={(event) => {
-              setSubject(event.target.value);
-              changed();
-            }}
-          />
-        </label>
-        <label>
-          <span>{isStudy ? "TOPIC" : "WHAT?"}</span>
-          <input
-            required={isStudy}
-            maxLength={200}
-            value={topic}
-            placeholder={isStudy ? "Types of soils" : "What were you doing?"}
-            onChange={(event) => {
-              setTopic(event.target.value);
-              changed();
-            }}
-          />
-        </label>
-        <label className="ledgerNote">
-          <span>EXTRA NOTE</span>
-          <input
-            maxLength={2000}
-            value={note}
-            placeholder="Anything worth remembering"
-            onChange={(event) => {
-              setNote(event.target.value);
-              changed();
-            }}
-          />
-        </label>
-        <div className="ledgerSave">
-          <span>{interval ? `${interval.duration} MIN` : "CHECK TIME"}</span>
-          <button
-            className={confirmOverlap ? "outlineButton" : "primaryButton"}
-            disabled={
-              saving ||
-              !interval ||
-              date > today ||
-              (isStudy && (!subject.trim() || !topic.trim()))
-            }
-          >
-            {saving ? "SAVING…" : confirmOverlap ? "SAVE OVERLAP" : "ADD ROW +"}
-          </button>
-        </div>
       </form>
       <p className="microcopy ledgerHelp">
         The day closes at midnight IST. Use 00:00 to close the final interval;
